@@ -1,6 +1,6 @@
 # Makefile for par-particle-life
 
-.PHONY: build clean format lint test checkall release run help
+.PHONY: build clean format lint test checkall release run help deploy
 
 # Default target
 all: build
@@ -37,6 +37,11 @@ test:
 checkall: format lint test
 	@echo "All checks passed!"
 
+# Deploy: trigger release pipeline
+deploy:
+	gh workflow run release.yml
+	@echo "Release pipeline triggered. View at: https://github.com/paulrobello/par-particle-life/actions"
+
 # Type check only (fast)
 check:
 	cargo check
@@ -55,6 +60,7 @@ help:
 	@echo "  test       - Run tests"
 	@echo "  checkall   - Run format, lint, and test"
 	@echo "  check      - Type check only (fast)"
+	@echo "  deploy     - Trigger release pipeline"
 	@echo "  help       - Show this help message"
 
 APP_NAME = ParParticleLife
