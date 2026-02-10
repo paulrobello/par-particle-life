@@ -4,7 +4,7 @@
 //! particle interaction matrices, ranging from simple random
 //! patterns to complex mathematical constructs.
 
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 

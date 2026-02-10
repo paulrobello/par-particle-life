@@ -3,7 +3,7 @@
 //! This module provides 37 different color palette generators,
 //! from simple rainbow gradients to complex procedural palettes.
 
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 

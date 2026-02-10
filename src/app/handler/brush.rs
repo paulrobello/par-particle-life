@@ -1,6 +1,6 @@
 //! Brush tool operations for particle manipulation.
 
-use rand::Rng;
+use rand::RngExt;
 
 use super::AppHandler;
 use crate::app::BrushTool;

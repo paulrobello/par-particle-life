@@ -228,7 +228,7 @@ impl GameOfLife {
 
     /// Randomize the grid with the given alive probability.
     pub fn randomize(&mut self, alive_probability: f32) {
-        use rand::Rng;
+        use rand::RngExt;
         let mut rng = rand::rng();
 
         for cell in &mut self.grid {

@@ -3,7 +3,7 @@
 //! This module provides 27 different spawn patterns for particles,
 //! from simple random distributions to complex geometric arrangements.
 
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
