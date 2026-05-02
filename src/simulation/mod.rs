@@ -88,6 +88,14 @@ pub struct SimulationConfig {
 
     /// Background color [r, g, b] in 0.0-1.0 range.
     pub background_color: [f32; 3],
+
+    /// Temperature / Brownian noise strength (0.0 - 50.0). Adds random velocity perturbation each frame.
+    #[serde(default)]
+    pub temperature: f32,
+
+    /// Frame counter for seeding GPU random noise. Incremented each frame.
+    #[serde(default)]
+    pub frame_counter: u32,
 }
 
 /// Default value for max_bin_density (used by serde).
@@ -121,6 +129,8 @@ impl Default for SimulationConfig {
             background_color: [0.0, 0.0, 0.0], // Black
             max_bin_density: 5000.0,
             neighbor_budget: 0, // 0 = unlimited (default), set non-zero to cap iterations in dense clusters
+            temperature: 0.0,
+            frame_counter: 0,
         }
     }
 }

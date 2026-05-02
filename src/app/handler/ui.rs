@@ -166,6 +166,7 @@ impl AppHandler {
                                 self.app.regenerate_rules();
                                 self.app.regenerate_colors();
                                 self.app.regenerate_particles();
+                                self.app.resize_per_type_arrays();
                                 self.sync_buffers();
                             }
 
@@ -230,6 +231,13 @@ impl AppHandler {
                                 .text("Max Velocity"),
                             );
                             self.app.config.phys_max_velocity = self.app.sim_config.max_velocity;
+
+                            // Temperature slider
+                            ui.add(
+                                egui::Slider::new(&mut self.app.sim_config.temperature, 0.0..=50.0)
+                                    .text("Temperature"),
+                            );
+                            self.app.config.phys_temperature = self.app.sim_config.temperature;
 
                             // Boundary mode
                             let boundary_modes = [
@@ -296,6 +304,31 @@ impl AppHandler {
                                     });
                                 self.app.config.phys_mirror_wrap_count =
                                     self.app.sim_config.mirror_wrap_count;
+                            }
+
+                            // Per-type mass
+                            let num_types = self.app.sim_config.num_types as usize;
+                            let mass_response = egui::CollapsingHeader::new("Per-Type Mass")
+                                .id_salt("per_type_mass")
+                                .default_open(false)
+                                .show(ui, |ui| {
+                                    let mut changed = false;
+                                    for i in 0..num_types {
+                                        if i < self.app.type_masses.len() {
+                                            let r = ui.add(
+                                                egui::Slider::new(
+                                                    &mut self.app.type_masses[i],
+                                                    0.1..=10.0,
+                                                )
+                                                .text(format!("Type {}", i)),
+                                            );
+                                            changed = changed || r.changed();
+                                        }
+                                    }
+                                    changed
+                                });
+                            if mass_response.body_returned.unwrap_or(false) {
+                                self.sync_type_masses();
                             }
                         });
                     self.ui_physics_open = response.openness > 0.5;
@@ -584,6 +617,28 @@ impl AppHandler {
                 .text("Particle Size"),
         );
         self.app.config.render_particle_size = self.app.sim_config.particle_size;
+
+        // Per-type size multipliers
+        let num_types = self.app.sim_config.num_types as usize;
+        let size_response = egui::CollapsingHeader::new("Per-Type Size")
+            .id_salt("per_type_size")
+            .default_open(false)
+            .show(ui, |ui| {
+                let mut changed = false;
+                for i in 0..num_types {
+                    if i < self.app.type_sizes.len() {
+                        let r = ui.add(
+                            egui::Slider::new(&mut self.app.type_sizes[i], 0.1..=5.0)
+                                .text(format!("Type {}", i)),
+                        );
+                        changed = changed || r.changed();
+                    }
+                }
+                changed
+            });
+        if size_response.body_returned.unwrap_or(false) {
+            self.sync_type_sizes();
+        }
 
         ui.horizontal(|ui| {
             ui.label("Background");

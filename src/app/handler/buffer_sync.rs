@@ -35,6 +35,8 @@ impl AppHandler {
                 &self.app.interaction_matrix,
                 &self.app.radius_matrix,
                 &colors_rgba,
+                &self.app.type_masses,
+                &self.app.type_sizes,
                 &self.app.sim_config,
             );
 
@@ -169,6 +171,20 @@ impl AppHandler {
         }
     }
 
+    pub(crate) fn sync_type_masses(&mut self) {
+        if let Some(gpu) = &self.gpu {
+            gpu.buffers
+                .update_type_masses(&gpu.context.queue, &self.app.type_masses);
+        }
+    }
+
+    pub(crate) fn sync_type_sizes(&mut self) {
+        if let Some(gpu) = &self.gpu {
+            gpu.buffers
+                .update_type_sizes(&gpu.context.queue, &self.app.type_sizes);
+        }
+    }
+
     /// Resets all application settings and simulation state to their default values.
     pub(crate) fn reset_to_defaults(&mut self) {
         // Reset AppConfig to default
@@ -199,6 +215,8 @@ impl AppHandler {
         self.app.current_palette = PaletteType::Rainbow;
         self.app.colors = generate_colors(PaletteType::Rainbow, num_types);
         self.app.current_pattern = PositionPattern::Disk;
+        self.app.type_masses = vec![1.0; num_types];
+        self.app.type_sizes = vec![1.0; num_types];
 
         // Regenerate particles with default settings
         let spawn_config = SpawnConfig {

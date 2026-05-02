@@ -34,6 +34,9 @@ impl AppHandler {
 
         let dt_capped = dt.min(1.0 / 30.0); // Cap dt to avoid instability
 
+        // Increment frame counter for GPU noise seeding
+        self.app.sim_config.frame_counter = self.app.sim_config.frame_counter.wrapping_add(1);
+
         // Spatial hash is always enabled; enforce even if a preset/file had it off
         self.app.sim_config.use_spatial_hash = true;
 

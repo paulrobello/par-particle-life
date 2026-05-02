@@ -314,8 +314,14 @@ pub struct SimParamsUniform {
     pub max_bin_density: f32,
     /// Maximum neighbors to check per particle (0 = unlimited).
     pub neighbor_budget: u32,
-    /// Padding to match WGSL struct alignment (vec3<u32> requires 16-byte alignment + struct rounds to 16 bytes).
-    _padding: [u32; 6],
+    /// Padding for alignment.
+    _padding0: u32,
+    /// Temperature / Brownian noise strength.
+    pub temperature: f32,
+    /// Frame counter for GPU noise seeding.
+    pub frame_counter: u32,
+    /// Remaining padding.
+    _padding1: [u32; 3],
 }
 
 impl SimParamsUniform {
@@ -343,7 +349,10 @@ impl SimParamsUniform {
             dt,
             max_bin_density: config.max_bin_density,
             neighbor_budget: config.neighbor_budget,
-            _padding: [0; 6],
+            _padding0: 0,
+            temperature: config.temperature,
+            frame_counter: config.frame_counter,
+            _padding1: [0; 3],
         }
     }
 }
@@ -370,6 +379,10 @@ pub struct SimulationBuffers {
     pub params: Buffer,
     /// Color palette buffer for particle types.
     pub colors: Buffer,
+    /// Per-type mass buffer.
+    pub type_masses: Buffer,
+    /// Per-type size multiplier buffer.
+    pub type_sizes: Buffer,
     /// Current number of particles.
     pub num_particles: u32,
     /// Current number of particle types.
@@ -388,12 +401,15 @@ impl SimulationBuffers {
     /// * `radius_matrix` - Min/max radius matrices
     /// * `colors` - RGBA colors for each particle type
     /// * `config` - Simulation configuration
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         device: &Device,
         particles: &[Particle],
         interaction_matrix: &InteractionMatrix,
         radius_matrix: &RadiusMatrix,
         colors: &[[f32; 4]],
+        type_masses: &[f32],
+        type_sizes: &[f32],
         config: &SimulationConfig,
     ) -> Self {
         let num_particles = particles.len() as u32;
@@ -488,6 +504,20 @@ impl SimulationBuffers {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
+        // Create per-type mass buffer
+        let type_masses_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Type Masses Buffer"),
+            contents: bytemuck::cast_slice(type_masses),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+
+        // Create per-type size buffer
+        let type_sizes_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Type Sizes Buffer"),
+            contents: bytemuck::cast_slice(type_sizes),
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+        });
+
         Self {
             pos_type: [pt0, pt1],
             velocities: [vel_buffer_0, vel_buffer_1],
@@ -497,6 +527,8 @@ impl SimulationBuffers {
             max_radius: max_radius_buffer,
             params: params_buffer,
             colors: colors_buffer,
+            type_masses: type_masses_buffer,
+            type_sizes: type_sizes_buffer,
             num_particles,
             num_types,
             use_f16,
@@ -583,6 +615,14 @@ impl SimulationBuffers {
     /// Update color palette buffer.
     pub fn update_colors(&self, queue: &Queue, colors: &[[f32; 4]]) {
         queue.write_buffer(&self.colors, 0, bytemuck::cast_slice(colors));
+    }
+
+    pub fn update_type_masses(&self, queue: &Queue, masses: &[f32]) {
+        queue.write_buffer(&self.type_masses, 0, bytemuck::cast_slice(masses));
+    }
+
+    pub fn update_type_sizes(&self, queue: &Queue, sizes: &[f32]) {
+        queue.write_buffer(&self.type_sizes, 0, bytemuck::cast_slice(sizes));
     }
 
     /// Read particles back from GPU (for debugging or saving).

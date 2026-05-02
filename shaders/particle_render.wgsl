@@ -24,11 +24,11 @@ struct SimParams {
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
     _padding0: u32,
+    temperature: f32,
+    frame_counter: u32,
     _padding1: u32,
     _padding2: u32,
     _padding3: u32,
-    _padding4: u32,
-    _padding5: u32,
 }
 
 struct Camera {
@@ -52,6 +52,7 @@ const QUAD_VERTICES = array<vec2<f32>, 4>(
 @group(0) @binding(1) var<storage, read> colors: array<vec4<f32>>;
 @group(0) @binding(2) var<uniform> params: SimParams;
 @group(0) @binding(3) var<uniform> camera: Camera;
+@group(0) @binding(4) var<storage, read> type_sizes: array<f32>;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -75,7 +76,7 @@ fn vs_main(
 
     // Get quad vertex offset
     let quad_offset = QUAD_VERTICES[vertex_index];
-    let vertex_offset = quad_offset * params.particle_size * camera_scale;
+    let vertex_offset = quad_offset * params.particle_size * type_sizes[particle.particle_type] * camera_scale;
     let final_pos = transformed_pos + vertex_offset;
 
     var output: VertexOutput;

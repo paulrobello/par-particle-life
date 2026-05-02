@@ -17,6 +17,8 @@ impl AppHandler {
             self.app.current_rule,
             self.app.current_palette,
             self.app.current_pattern,
+            &self.app.type_masses,
+            &self.app.type_sizes,
         );
 
         match Preset::ensure_presets_dir() {
@@ -54,6 +56,8 @@ impl AppHandler {
                 self.app.current_rule = preset.rule_type;
                 self.app.current_palette = preset.palette_type;
                 self.app.current_pattern = preset.position_pattern;
+                self.app.type_masses = preset.type_masses;
+                self.app.type_sizes = preset.type_sizes;
 
                 // Mirror into persisted config so settings survive restart
                 self.app.config.sim_num_particles = self.app.sim_config.num_particles;
@@ -76,6 +80,7 @@ impl AppHandler {
                 self.app.config.render_glow_steepness = self.app.sim_config.glow_steepness;
                 self.app.config.render_spatial_hash_cell_size =
                     self.app.sim_config.spatial_hash_cell_size;
+                self.app.config.phys_temperature = self.app.sim_config.temperature;
 
                 // Regenerate colors from palette
                 self.app.colors = crate::generators::colors::generate_colors(

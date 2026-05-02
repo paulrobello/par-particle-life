@@ -24,6 +24,8 @@ impl AppHandler {
             &self.app.interaction_matrix,
             &self.app.radius_matrix,
             &colors_rgba,
+            &self.app.type_masses,
+            &self.app.type_sizes,
             &self.app.sim_config,
         );
 

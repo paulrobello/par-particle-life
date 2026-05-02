@@ -24,11 +24,11 @@ struct SimParams {
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
     _padding0: u32,
+    temperature: f32,
+    frame_counter: u32,
     _padding1: u32,
     _padding2: u32,
     _padding3: u32,
-    _padding4: u32,
-    _padding5: u32,
 }
 
 struct BrushParams {
@@ -57,6 +57,13 @@ struct BrushParams {
 // Force scaling constants (matched to reference implementation)
 const BRUSH_FORCE_MULTIPLIER: f32 = 50.0;
 const BRUSH_DIRECTIONAL_STRENGTH: f32 = 40.0;
+
+// PCG-style hash for GPU random noise
+fn pcg_hash(input: u32) -> u32 {
+    var state = input * 747796405u + 2891336453u;
+    let word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
 
 @group(0) @binding(0) var<storage, read_write> pos: array<PosType>;
 @group(0) @binding(1) var<storage, read_write> vel: array<vec2<VEL_FLOAT>>;
@@ -125,6 +132,15 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     // Apply friction
     let friction_factor = 1.0 - params.friction;
     particle_vel = particle_vel * friction_factor;
+
+    // Apply temperature (Brownian noise)
+    if (params.temperature > 0.0) {
+        let seed1 = pcg_hash(i + params.frame_counter * 74839u);
+        let seed2 = pcg_hash(seed1);
+        let noise_x = f32(seed1) / 4294967295.0 - 0.5;
+        let noise_y = f32(seed2) / 4294967295.0 - 0.5;
+        particle_vel = particle_vel + vec2<f32>(noise_x, noise_y) * params.temperature;
+    }
 
     // Clamp velocity
     let speed = length(particle_vel);

@@ -464,6 +464,17 @@ impl SpatialHashPipelines {
                     },
                     count: None,
                 },
+                // type_masses (storage, read-only)
+                BindGroupLayoutEntry {
+                    binding: 9,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -656,6 +667,10 @@ impl SpatialHashPipelines {
                 BindGroupEntry {
                     binding: 8,
                     resource: sorted_pos_type.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 9,
+                    resource: sim_buffers.type_masses.as_entire_binding(),
                 },
             ],
         })

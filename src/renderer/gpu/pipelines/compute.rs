@@ -167,6 +167,17 @@ impl ComputePipelines {
                     },
                     count: None,
                 },
+                // type_masses
+                BindGroupLayoutEntry {
+                    binding: 7,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -264,6 +275,10 @@ impl ComputePipelines {
                 BindGroupEntry {
                     binding: 6,
                     resource: buffers.max_radius.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 7,
+                    resource: buffers.type_masses.as_entire_binding(),
                 },
             ],
         })

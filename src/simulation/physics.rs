@@ -1,6 +1,7 @@
 //! Physics engine for particle force calculations and movement.
 
 use glam::Vec2;
+use rand::RngExt;
 use rayon::prelude::*;
 
 use super::{
@@ -38,6 +39,7 @@ impl PhysicsEngine {
         particles: &mut [Particle],
         interaction_matrix: &InteractionMatrix,
         radius_matrix: &RadiusMatrix,
+        type_masses: &[f32],
         config: &SimulationConfig,
         dt: f32,
     ) {
@@ -58,11 +60,18 @@ impl PhysicsEngine {
                 &mut self.forces,
                 interaction_matrix,
                 radius_matrix,
+                type_masses,
                 config,
                 spatial_hash,
             );
         } else {
-            self.forces = compute_forces_cpu(particles, interaction_matrix, radius_matrix, config);
+            self.forces = compute_forces_cpu(
+                particles,
+                interaction_matrix,
+                radius_matrix,
+                type_masses,
+                config,
+            );
         }
 
         // Advance particles (parallel)
@@ -83,6 +92,7 @@ pub fn compute_forces_cpu(
     particles: &[Particle],
     interaction_matrix: &InteractionMatrix,
     radius_matrix: &RadiusMatrix,
+    type_masses: &[f32],
     config: &SimulationConfig,
 ) -> Vec<Vec2> {
     let use_wrap = matches!(
@@ -137,7 +147,7 @@ pub fn compute_forces_cpu(
                 }
             }
 
-            force / config.force_factor
+            force / config.force_factor / type_masses[p_type]
         })
         .collect()
 }
@@ -148,6 +158,7 @@ fn compute_forces_spatial(
     forces: &mut [Vec2],
     interaction_matrix: &InteractionMatrix,
     radius_matrix: &RadiusMatrix,
+    type_masses: &[f32],
     config: &SimulationConfig,
     spatial_hash: &SpatialHash,
 ) {
@@ -203,7 +214,7 @@ fn compute_forces_spatial(
             }
         }
 
-        *force /= config.force_factor;
+        *force /= config.force_factor / type_masses[p_type];
     });
 }
 
@@ -229,6 +240,13 @@ pub fn advance_particles(
             let friction_factor = 1.0 - config.friction;
             p.vx *= friction_factor;
             p.vy *= friction_factor;
+
+            // Apply temperature (Brownian noise)
+            if config.temperature > 0.0 {
+                let mut rng = rand::rng();
+                p.vx += (rng.random::<f32>() - 0.5) * config.temperature;
+                p.vy += (rng.random::<f32>() - 0.5) * config.temperature;
+            }
 
             // Apply force (Euler integration)
             p.vx += force.x * dt;
@@ -282,7 +300,8 @@ mod tests {
             ..Default::default()
         };
 
-        let forces = compute_forces_cpu(&particles, &matrix, &radii, &config);
+        let type_masses = vec![1.0, 1.0];
+        let forces = compute_forces_cpu(&particles, &matrix, &radii, &type_masses, &config);
 
         // Particle 0 should be pulled right (towards particle 1)
         assert!(forces[0].x > 0.0);

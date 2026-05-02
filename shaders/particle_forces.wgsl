@@ -25,11 +25,11 @@ struct SimParams {
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
     _padding0: u32,
+    temperature: f32,
+    frame_counter: u32,
     _padding1: u32,
     _padding2: u32,
     _padding3: u32,
-    _padding4: u32,
-    _padding5: u32,
 }
 
 @group(0) @binding(0) var<storage, read> pos_type_in: array<PosType>;
@@ -39,6 +39,7 @@ struct SimParams {
 @group(0) @binding(4) var<storage, read> interaction_matrix: array<f32>;
 @group(0) @binding(5) var<storage, read> min_radius: array<f32>;
 @group(0) @binding(6) var<storage, read> max_radius: array<f32>;
+@group(0) @binding(7) var<storage, read> type_masses: array<f32>;
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -154,10 +155,11 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }
 
-    // Apply force scaled by force factor
+    // Apply force scaled by force factor, divided by per-type mass
+    let inv_mass = 1.0 / type_masses[my_type];
     var updated_vel = my_vel;
-    updated_vel.x = updated_vel.x + total_force.x * params.force_factor;
-    updated_vel.y = updated_vel.y + total_force.y * params.force_factor;
+    updated_vel.x = updated_vel.x + total_force.x * params.force_factor * inv_mass;
+    updated_vel.y = updated_vel.y + total_force.y * params.force_factor * inv_mass;
 
     vel_out[i] = vec2<VEL_FLOAT>(updated_vel);
 }

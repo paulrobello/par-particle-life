@@ -99,6 +99,10 @@ pub struct AppConfig {
     /// Simulation: auto-scale radii with particle density.
     #[serde(default = "default_auto_scale_radii")]
     pub auto_scale_radii: bool,
+
+    /// Physics: temperature / Brownian noise strength.
+    #[serde(default)]
+    pub phys_temperature: f32,
 }
 
 impl Default for AppConfig {
@@ -148,6 +152,9 @@ impl Default for AppConfig {
 
             // Density scaling
             auto_scale_radii: default_auto_scale_radii(),
+
+            // Temperature
+            phys_temperature: 0.0,
         }
     }
 }

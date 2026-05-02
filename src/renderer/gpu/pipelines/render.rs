@@ -366,6 +366,17 @@ impl RenderPipelines {
                     },
                     count: None,
                 },
+                // type_sizes (storage, read-only)
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -398,6 +409,10 @@ impl RenderPipelines {
                 BindGroupEntry {
                     binding: 3,
                     resource: self.camera_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: buffers.type_sizes.as_entire_binding(),
                 },
             ],
         })
@@ -501,6 +516,17 @@ impl RenderPipelines {
                     },
                     count: None,
                 },
+                // type_sizes (storage, read-only)
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -535,6 +561,10 @@ impl RenderPipelines {
                 BindGroupEntry {
                     binding: 4,
                     resource: self.glow_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: buffers.type_sizes.as_entire_binding(),
                 },
             ],
         })
@@ -600,6 +630,17 @@ impl RenderPipelines {
                     },
                     count: None,
                 },
+                // type_sizes (storage, read-only)
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -634,6 +675,10 @@ impl RenderPipelines {
                 BindGroupEntry {
                     binding: 4,
                     resource: self.mirror_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: buffers.type_sizes.as_entire_binding(),
                 },
             ],
         })
@@ -705,6 +750,17 @@ impl RenderPipelines {
                     },
                     count: None,
                 },
+                // type_sizes (storage, read-only)
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -739,6 +795,10 @@ impl RenderPipelines {
                 BindGroupEntry {
                     binding: 4,
                     resource: self.infinite_buffer.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: buffers.type_sizes.as_entire_binding(),
                 },
             ],
         })

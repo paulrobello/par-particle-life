@@ -25,11 +25,11 @@ struct SimParams {
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
     _padding0: u32,
+    temperature: f32,
+    frame_counter: u32,
     _padding1: u32,
     _padding2: u32,
     _padding3: u32,
-    _padding4: u32,
-    _padding5: u32,
 }
 
 struct Camera {
@@ -62,6 +62,7 @@ const QUAD_VERTICES = array<vec2<f32>, 4>(
 @group(0) @binding(2) var<uniform> params: SimParams;
 @group(0) @binding(3) var<uniform> camera: Camera;
 @group(0) @binding(4) var<uniform> glow: GlowParams;
+@group(0) @binding(5) var<storage, read> type_sizes: array<f32>;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -85,7 +86,7 @@ fn vs_main(
 
     // Get quad vertex offset - scaled by glow_size for larger glow effect
     let quad_offset = QUAD_VERTICES[vertex_index];
-    let glow_particle_size = params.particle_size * glow.glow_size;
+    let glow_particle_size = params.particle_size * type_sizes[particle.particle_type] * glow.glow_size;
     let vertex_offset = quad_offset * glow_particle_size * camera_scale;
     let final_pos = transformed_pos + vertex_offset;
 

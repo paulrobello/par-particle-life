@@ -25,10 +25,25 @@ pub struct Preset {
     pub palette_type: PaletteType,
     /// Position pattern.
     pub position_pattern: PositionPattern,
+    /// Per-type mass values.
+    #[serde(default = "default_type_masses")]
+    pub type_masses: Vec<f32>,
+    /// Per-type size multiplier values.
+    #[serde(default = "default_type_sizes")]
+    pub type_sizes: Vec<f32>,
+}
+
+fn default_type_masses() -> Vec<f32> {
+    vec![1.0; 7]
+}
+
+fn default_type_sizes() -> Vec<f32> {
+    vec![1.0; 7]
 }
 
 impl Preset {
     /// Create a new preset from the current simulation state.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: impl Into<String>,
         sim_config: &SimulationConfig,
@@ -37,6 +52,8 @@ impl Preset {
         rule_type: RuleType,
         palette_type: PaletteType,
         position_pattern: PositionPattern,
+        type_masses: &[f32],
+        type_sizes: &[f32],
     ) -> Self {
         Self {
             name: name.into(),
@@ -46,6 +63,8 @@ impl Preset {
             rule_type,
             palette_type,
             position_pattern,
+            type_masses: type_masses.to_vec(),
+            type_sizes: type_sizes.to_vec(),
         }
     }
 

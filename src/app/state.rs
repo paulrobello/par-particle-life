@@ -39,6 +39,10 @@ pub struct App {
     pub current_pattern: PositionPattern,
     /// Auto-scale radii with density (persisted setting).
     pub auto_scale_radii: bool,
+    /// Per-type mass (higher = slower response to forces).
+    pub type_masses: Vec<f32>,
+    /// Per-type size multiplier on global particle_size.
+    pub type_sizes: Vec<f32>,
 }
 
 impl App {
@@ -69,6 +73,7 @@ impl App {
             glow_steepness: config.render_glow_steepness,
             spatial_hash_cell_size: config.render_spatial_hash_cell_size,
             use_spatial_hash: true, // always on
+            temperature: config.phys_temperature,
             ..SimulationConfig::default()
         };
         // Enforce current max particle size limit
@@ -105,6 +110,9 @@ impl App {
 
         let physics = PhysicsEngine::new(particles.len());
 
+        let type_masses = vec![1.0; num_types];
+        let type_sizes = vec![1.0; num_types];
+
         Self {
             config,
             sim_config,
@@ -118,6 +126,8 @@ impl App {
             current_palette,
             current_pattern,
             auto_scale_radii,
+            type_masses,
+            type_sizes,
         }
     }
 
@@ -144,6 +154,7 @@ impl App {
             &mut self.particles,
             &self.interaction_matrix,
             &self.radius_matrix,
+            &self.type_masses,
             &self.sim_config,
             dt,
         );
@@ -170,6 +181,13 @@ impl App {
     /// Regenerate the color palette.
     pub fn regenerate_colors(&mut self) {
         self.colors = generate_colors(self.current_palette, self.sim_config.num_types as usize);
+    }
+
+    /// Resize per-type arrays (masses, sizes) to match current num_types.
+    pub fn resize_per_type_arrays(&mut self) {
+        let n = self.sim_config.num_types as usize;
+        self.type_masses.resize(n, 1.0);
+        self.type_sizes.resize(n, 1.0);
     }
 
     /// Toggle simulation running state.

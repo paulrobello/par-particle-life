@@ -25,11 +25,11 @@ struct SimParams {
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
     _padding0: u32,
+    temperature: f32,
+    frame_counter: u32,
     _padding1: u32,
     _padding2: u32,
     _padding3: u32,
-    _padding4: u32,
-    _padding5: u32,
 }
 
 struct SpatialParams {
@@ -47,6 +47,7 @@ struct SpatialParams {
 @group(0) @binding(6) var<storage, read> bin_offsets: array<u32>;
 @group(0) @binding(7) var<uniform> spatial: SpatialParams;
 @group(0) @binding(8) var<storage, read> sorted_pos_type: array<PosType>;
+@group(0) @binding(9) var<storage, read> type_masses: array<f32>;
 
 fn get_bin_coords(pos: vec2<f32>) -> vec2<i32> {
     return vec2<i32>(
@@ -229,8 +230,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
     }
 
-    // Apply force scaled by force factor
-    var final_force = total_force * params.force_factor;
+    // Apply force scaled by force factor, divided by per-type mass
+    let inv_mass = 1.0 / type_masses[my_type];
+    var final_force = total_force * params.force_factor * inv_mass;
 
     // Apply density-based force scaling if max_bin_density is set (non-zero)
     // This reduces forces in very dense clusters to prevent explosions and stabilize performance
