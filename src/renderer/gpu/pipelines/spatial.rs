@@ -82,32 +82,32 @@ impl SpatialHashPipelines {
         // Create pipeline layouts
         let clear_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Bin Clear Pipeline Layout"),
-            bind_group_layouts: &[&clear_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&clear_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let count_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Bin Count Pipeline Layout"),
-            bind_group_layouts: &[&count_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&count_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let prefix_sum_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Prefix Sum Pipeline Layout"),
-            bind_group_layouts: &[&prefix_sum_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&prefix_sum_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let sort_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Bin Sort Pipeline Layout"),
-            bind_group_layouts: &[&sort_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&sort_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let forces_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Binned Forces Pipeline Layout"),
-            bind_group_layouts: &[&forces_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&forces_bind_group_layout)],
+            immediate_size: 0,
         });
 
         // Create pipelines

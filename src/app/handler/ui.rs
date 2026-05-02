@@ -16,7 +16,8 @@ impl AppHandler {
             return;
         }
 
-        egui::SidePanel::left("controls")
+        #[allow(deprecated)]
+        egui::Panel::left("controls")
             .default_width(280.0)
             .resizable(true)
             .show(ctx, |ui| {
@@ -802,7 +803,7 @@ impl AppHandler {
 
                     // Handle scroll wheel to change value
                     // Cycles through -1 -> 0 -> 1 so neutral (0) is between attract and repel
-                    let scroll_delta = ui.input(|i| i.raw_scroll_delta.y);
+                    let scroll_delta = ui.input(|i| i.smooth_scroll_delta().y);
                     if scroll_delta != 0.0 {
                         let new_value = if scroll_delta > 0.0 {
                             // Scroll up: -1 -> 0 -> 1

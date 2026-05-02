@@ -82,26 +82,26 @@ impl RenderPipelines {
         // Create pipeline layouts
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Render Pipeline Layout"),
-            bind_group_layouts: &[&render_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&render_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let glow_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Glow Pipeline Layout"),
-            bind_group_layouts: &[&glow_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&glow_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let mirror_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Mirror Pipeline Layout"),
-            bind_group_layouts: &[&mirror_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&mirror_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let infinite_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Infinite Pipeline Layout"),
-            bind_group_layouts: &[&infinite_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&infinite_bind_group_layout)],
+            immediate_size: 0,
         });
 
         // Create particle render pipeline
@@ -135,7 +135,7 @@ impl RenderPipelines {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -182,7 +182,7 @@ impl RenderPipelines {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -217,7 +217,7 @@ impl RenderPipelines {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -252,7 +252,7 @@ impl RenderPipelines {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

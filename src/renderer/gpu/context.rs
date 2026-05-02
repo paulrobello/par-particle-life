@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use wgpu::{
-    Adapter, Device, Features, Instance, InstanceDescriptor, Limits, PresentMode, Queue, Surface,
+    Adapter, Device, Features, Instance, InstanceDescriptor, Limits, PresentMode, Queue,
     SurfaceConfiguration, TextureFormat, TextureUsages,
 };
 use winit::window::Window;
@@ -30,7 +30,7 @@ pub struct GpuContext {
     /// Command submission queue.
     pub queue: Queue,
     /// Window surface for rendering.
-    pub surface: Surface<'static>,
+    pub surface: wgpu::Surface<'static>,
     /// Surface configuration.
     pub surface_config: SurfaceConfiguration,
     /// Window reference.
@@ -48,10 +48,9 @@ impl GpuContext {
     /// 5. Configure the surface for presentation
     pub async fn new(window: Arc<Window>, vsync: bool) -> Result<Self> {
         // Create wgpu instance with all available backends
-        let instance = Instance::new(&InstanceDescriptor {
+        let instance = Instance::new(InstanceDescriptor {
             backends: wgpu::Backends::all(),
-            flags: wgpu::InstanceFlags::default(),
-            ..Default::default()
+            ..InstanceDescriptor::new_without_display_handle()
         });
 
         // Create surface from window
@@ -124,7 +123,7 @@ impl GpuContext {
     }
 
     /// Select the best present mode for the vsync flag.
-    fn select_present_mode(adapter: &Adapter, surface: &Surface, vsync: bool) -> PresentMode {
+    fn select_present_mode(adapter: &Adapter, surface: &wgpu::Surface, vsync: bool) -> PresentMode {
         let caps = surface.get_capabilities(adapter);
 
         if vsync {
@@ -219,27 +218,32 @@ impl GpuContext {
     /// Returns `None` if the surface is not ready (e.g., minimized).
     pub fn get_current_texture(&self) -> Option<wgpu::SurfaceTexture> {
         match self.surface.get_current_texture() {
-            Ok(frame) => Some(frame),
-            Err(wgpu::SurfaceError::Timeout) => {
+            wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
+            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
+                log::warn!("Surface suboptimal, reconfiguring");
+                self.surface.configure(&self.device, &self.surface_config);
+                Some(frame)
+            }
+            wgpu::CurrentSurfaceTexture::Timeout => {
                 log::warn!("Surface timeout");
                 None
             }
-            Err(wgpu::SurfaceError::Outdated) => {
+            wgpu::CurrentSurfaceTexture::Outdated => {
                 log::warn!("Surface outdated, reconfiguring");
                 self.surface.configure(&self.device, &self.surface_config);
                 None
             }
-            Err(wgpu::SurfaceError::Lost) => {
+            wgpu::CurrentSurfaceTexture::Lost => {
                 log::warn!("Surface lost, reconfiguring");
                 self.surface.configure(&self.device, &self.surface_config);
                 None
             }
-            Err(wgpu::SurfaceError::OutOfMemory) => {
-                log::error!("Out of GPU memory");
+            wgpu::CurrentSurfaceTexture::Occluded => {
+                log::debug!("Surface occluded (e.g. minimized)");
                 None
             }
-            Err(wgpu::SurfaceError::Other) => {
-                log::error!("Surface error: unknown");
+            wgpu::CurrentSurfaceTexture::Validation => {
+                log::error!("Surface validation error");
                 None
             }
         }

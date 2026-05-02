@@ -51,7 +51,7 @@ impl ApplicationHandler for AppHandler {
         let mut egui_wants_pointer = false;
         if let Some(gpu) = &mut self.gpu {
             let response = gpu.egui_state.on_window_event(&gpu.context.window, &event);
-            egui_wants_pointer = gpu.egui_ctx.wants_pointer_input();
+            egui_wants_pointer = gpu.egui_ctx.egui_wants_pointer_input();
             if response.consumed && egui_wants_pointer {
                 // Only return early if egui actually wants the pointer (over UI)
                 // But still update mouse position for smooth pan resumption
@@ -124,41 +124,39 @@ impl ApplicationHandler for AppHandler {
                     gpu.context.window.request_redraw();
                 }
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if event.state.is_pressed() {
-                    use winit::keyboard::{KeyCode, PhysicalKey};
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Space) => {
-                            self.app.toggle_running();
-                        }
-                        PhysicalKey::Code(KeyCode::KeyR) => {
-                            self.app.regenerate_particles();
-                            self.sync_buffers();
-                        }
-                        PhysicalKey::Code(KeyCode::KeyM) => {
-                            self.app.regenerate_rules();
-                            self.sync_interaction_matrix();
-                        }
-                        PhysicalKey::Code(KeyCode::KeyH) => {
-                            self.show_ui = !self.show_ui;
-                        }
-                        PhysicalKey::Code(KeyCode::KeyC) => {
-                            // Reset camera
-                            self.camera.reset();
-                            self.update_camera();
-                        }
-                        PhysicalKey::Code(KeyCode::F11) => {
-                            self.toggle_recording();
-                        }
-                        PhysicalKey::Code(KeyCode::F12) => {
-                            self.screenshot_requested = true;
-                            log::info!("Screenshot requested");
-                        }
-                        PhysicalKey::Code(KeyCode::Escape) => {
-                            event_loop.exit();
-                        }
-                        _ => {}
+            WindowEvent::KeyboardInput { event, .. } if event.state.is_pressed() => {
+                use winit::keyboard::{KeyCode, PhysicalKey};
+                match event.physical_key {
+                    PhysicalKey::Code(KeyCode::Space) => {
+                        self.app.toggle_running();
                     }
+                    PhysicalKey::Code(KeyCode::KeyR) => {
+                        self.app.regenerate_particles();
+                        self.sync_buffers();
+                    }
+                    PhysicalKey::Code(KeyCode::KeyM) => {
+                        self.app.regenerate_rules();
+                        self.sync_interaction_matrix();
+                    }
+                    PhysicalKey::Code(KeyCode::KeyH) => {
+                        self.show_ui = !self.show_ui;
+                    }
+                    PhysicalKey::Code(KeyCode::KeyC) => {
+                        // Reset camera
+                        self.camera.reset();
+                        self.update_camera();
+                    }
+                    PhysicalKey::Code(KeyCode::F11) => {
+                        self.toggle_recording();
+                    }
+                    PhysicalKey::Code(KeyCode::F12) => {
+                        self.screenshot_requested = true;
+                        log::info!("Screenshot requested");
+                    }
+                    PhysicalKey::Code(KeyCode::Escape) => {
+                        event_loop.exit();
+                    }
+                    _ => {}
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {

@@ -26,7 +26,7 @@ impl AppHandler {
         let raw_input = gpu.egui_state.take_egui_input(&gpu.context.window);
 
         // Run egui - now we can access self freely
-        let full_output = egui_ctx.run(raw_input, |ctx| {
+        let full_output = egui_ctx.run_ui(raw_input, |ctx| {
             self.draw_ui(ctx);
         });
 
@@ -91,6 +91,7 @@ impl AppHandler {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             // Pass ends here, just clears the background
         }
@@ -115,6 +116,7 @@ impl AppHandler {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             render_pass.set_pipeline(&gpu.render.glow_pipeline);
@@ -138,6 +140,7 @@ impl AppHandler {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             match self.app.sim_config.boundary_mode {
@@ -219,6 +222,7 @@ impl AppHandler {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             render_pass.set_pipeline(&gpu.brush_pipelines.circle_pipeline);
@@ -257,6 +261,7 @@ impl AppHandler {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
 
             // Use forget_lifetime to satisfy the static lifetime requirement

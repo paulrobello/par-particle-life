@@ -48,14 +48,14 @@ impl ComputePipelines {
         // Create pipeline layouts
         let force_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Force Pipeline Layout"),
-            bind_group_layouts: &[&force_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&force_bind_group_layout)],
+            immediate_size: 0,
         });
 
         let advance_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Advance Pipeline Layout"),
-            bind_group_layouts: &[&advance_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&advance_bind_group_layout)],
+            immediate_size: 0,
         });
 
         // Create compute pipelines

@@ -87,8 +87,8 @@ impl BrushPipelines {
         // Create pipeline layout
         let force_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Brush Force Pipeline Layout"),
-            bind_group_layouts: &[&force_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&force_bind_group_layout)],
+            immediate_size: 0,
         });
 
         // Create force compute pipeline
@@ -153,8 +153,8 @@ impl BrushPipelines {
         // Create pipeline layout for circle
         let circle_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Brush Circle Pipeline Layout"),
-            bind_group_layouts: &[&circle_bind_group_layout],
-            push_constant_ranges: &[],
+            bind_group_layouts: &[Some(&circle_bind_group_layout)],
+            immediate_size: 0,
         });
 
         // Create circle render pipeline
@@ -188,7 +188,7 @@ impl BrushPipelines {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

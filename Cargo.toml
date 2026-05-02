@@ -12,57 +12,57 @@ rust-version = "1.93"
 
 [dependencies]
 # GPU/Graphics
-wgpu = "27.0.1"
-winit = "0.30.12"
+wgpu = "29"
+winit = "0.30"
 
 # GUI
-egui = "0.33.3"
-egui-wgpu = "0.33.3"
-egui-winit = "0.33.3"
+egui = "0.34"
+egui-wgpu = "0.34"
+egui-winit = "0.34"
 
 # Math and utilities
-glam = { version = "0.31.0", features = ["serde"] }
-bytemuck = { version = "1.25.0", features = ["derive"] }
-rand = "0.10.0"
-rand_chacha = "0.10.0"
+glam = { version = "0.32", features = ["serde"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+rand = "0.10"
+rand_chacha = "0.10"
 
 # Serialization
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
-toml = "0.9.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
 
 # Async/threading
-pollster = "0.4.0"
-rayon = "1.11.0"
-crossbeam-channel = "0.5.15"
+pollster = "0.4"
+rayon = "1.12"
+crossbeam-channel = "0.5"
 
 # Logging and errors
-log = "0.4.29"
-env_logger = "0.11.8"
-thiserror = "2.0.18"
-anyhow = "1.0.101"
-clap = { version = "4.5.57", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+thiserror = "2"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
 
 # Image export
-image = "0.25.9"
-gif = "0.14.1"
-color_quant = "1.1.0"
+image = "0.25"
+gif = "0.14"
+color_quant = "1.1"
 
 # Date/time for screenshots
-chrono = "0.4.43"
+chrono = "0.4"
 
 # File system utilities
-dirs = "6.0.0"
-open = "5.3.3"
-half = { version = "2.7.1", features = ["bytemuck"] }
+dirs = "6"
+open = "5"
+half = { version = "2", features = ["bytemuck"] }
 
 [dev-dependencies]
-criterion = "0.8.2"
+criterion = "0.8"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2.108"
-web-sys = { version = "0.3.85", features = ["console"] }
-console_error_panic_hook = "0.1.7"
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["console"] }
+console_error_panic_hook = "0.1"
 
 [[bench]]
 name = "physics"
