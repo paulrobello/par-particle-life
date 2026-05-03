@@ -88,7 +88,7 @@ primary   := number | variable | function '(' args ')' | '(' expr ')'
 | `abs(x)` | f32 → f32 | Absolute value |
 | `sin(x)` | f32 → f32 | Sine (radians) |
 | `cos(x)` | f32 → f32 | Cosine (radians) |
-| `random()` | () → f32 | Uniform random in [-1, 1] |
+| `random()` | () → f32 | Uniform random in [-1, 1], different per cell evaluation |
 | `min(a, b)` | (f32, f32) → f32 | Minimum |
 | `max(a, b)` | (f32, f32) → f32 | Maximum |
 | `pow(b, e)` | (f32, f32) → f32 | Exponentiation |
