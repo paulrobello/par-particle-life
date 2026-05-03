@@ -4,7 +4,7 @@ use rand::RngExt;
 
 use super::AppHandler;
 use crate::app::BrushTool;
-use crate::simulation::{BoundaryMode, Particle};
+use crate::simulation::{BoundaryMode, ObstacleShape, Particle};
 
 impl AppHandler {
     /// Draw particles at the brush position.
@@ -135,7 +135,32 @@ impl AppHandler {
             BrushTool::Attract | BrushTool::Repel => {
                 // These are handled by the GPU compute shader
             }
-            BrushTool::None => {}
+            BrushTool::None | BrushTool::Obstacle => {}
         }
+    }
+
+    /// Find the obstacle index under the given world position, or -1 if none.
+    /// Checks in reverse order so topmost (last-drawn) obstacle wins.
+    pub(crate) fn hit_test_obstacle(&self, world_pos: glam::Vec2) -> i32 {
+        for (i, obs) in self.app.obstacles.iter().enumerate().rev() {
+            match obs.shape {
+                ObstacleShape::Circle => {
+                    let radius = obs.width / 2.0;
+                    let dx = world_pos.x - obs.x;
+                    let dy = world_pos.y - obs.y;
+                    if dx * dx + dy * dy <= radius * radius {
+                        return i as i32;
+                    }
+                }
+                ObstacleShape::Rectangle => {
+                    let hw = obs.width / 2.0;
+                    let hh = obs.height / 2.0;
+                    if (world_pos.x - obs.x).abs() <= hw && (world_pos.y - obs.y).abs() <= hh {
+                        return i as i32;
+                    }
+                }
+            }
+        }
+        -1
     }
 }

@@ -34,6 +34,8 @@ pub struct AppConfig {
     pub ui_presets_open: bool,
     /// UI: Is Keyboard Shortcuts section open?
     pub ui_keyboard_shortcuts_open: bool,
+    /// UI: Is Obstacles section open?
+    pub ui_obstacles_open: bool,
 
     /// Physics: force factor.
     #[serde(default = "default_phys_force_factor")]
@@ -130,6 +132,7 @@ impl Default for AppConfig {
             ui_rendering_open: false,          // Default false as per UI
             ui_presets_open: false,            // Default false as per UI
             ui_keyboard_shortcuts_open: false, // Default false as per UI
+            ui_obstacles_open: false,          // Default false as per UI
 
             // Physics defaults
             phys_force_factor: default_phys_force_factor(),

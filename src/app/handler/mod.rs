@@ -19,6 +19,7 @@ use std::time::Instant;
 use crate::app::gpu_state::GpuState;
 use crate::app::{App, BrushState, CameraState, Preset};
 use crate::generators::RuleType;
+use crate::simulation::ObstacleShape;
 use crate::video_recorder::{VideoFormat, VideoRecorder};
 
 /// Tracks whether the current rule selection is a built-in type or custom generator.
@@ -65,6 +66,8 @@ pub(crate) struct AppHandler {
     pub(crate) ui_presets_open: bool,
     /// UI: Is Keyboard Shortcuts section open?
     pub(crate) ui_keyboard_shortcuts_open: bool,
+    /// UI: Is Obstacles section open?
+    pub(crate) ui_obstacles_open: bool,
     /// Available presets list.
     pub(crate) preset_list: Vec<String>,
     /// Currently selected preset name for loading.
@@ -116,6 +119,18 @@ pub(crate) struct AppHandler {
     /// Current rule selection (built-in or custom generator).
     #[allow(dead_code)] // consumed by subsequent tasks
     pub(crate) rule_selection: RuleSelection,
+    /// Index of the currently selected obstacle (-1 = none).
+    pub(crate) selected_obstacle: i32,
+    /// Shape for the next obstacle placed via the Obstacle tool.
+    pub(crate) obstacle_tool_shape: ObstacleShape,
+    /// True when the user is dragging the selected obstacle.
+    pub(crate) obstacle_dragging: bool,
+    /// World-space offset from obstacle center to mouse at drag start.
+    pub(crate) obstacle_drag_offset: glam::Vec2,
+    /// Whether the cursor was last seen over the egui UI panel.
+    pub(crate) cursor_over_ui: bool,
+    /// Right edge of the UI panel in screen pixels (0 = no panel shown).
+    pub(crate) ui_panel_right_edge: f32,
 }
 
 impl AppHandler {
@@ -171,6 +186,7 @@ impl AppHandler {
         let ui_rendering_open = app.config.ui_rendering_open;
         let ui_presets_open = app.config.ui_presets_open;
         let ui_keyboard_shortcuts_open = app.config.ui_keyboard_shortcuts_open;
+        let ui_obstacles_open = app.config.ui_obstacles_open;
 
         let current_rule = app.current_rule;
 
@@ -209,6 +225,7 @@ impl AppHandler {
             ui_rendering_open,
             ui_presets_open,
             ui_keyboard_shortcuts_open,
+            ui_obstacles_open,
             preset_list,
             selected_preset: String::new(),
             save_preset_name: String::from("my_preset"),
@@ -234,6 +251,12 @@ impl AppHandler {
             last_log_time,
             step_requested: false,
             rule_selection: RuleSelection::BuiltIn(current_rule),
+            selected_obstacle: -1,
+            obstacle_tool_shape: ObstacleShape::Circle,
+            obstacle_dragging: false,
+            obstacle_drag_offset: glam::Vec2::ZERO,
+            cursor_over_ui: false,
+            ui_panel_right_edge: 0.0,
         }
     }
 }

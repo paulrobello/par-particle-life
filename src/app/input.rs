@@ -20,6 +20,8 @@ pub enum BrushTool {
     Attract,
     /// Repel particles away from brush position.
     Repel,
+    /// Place and edit obstacles.
+    Obstacle,
 }
 
 impl BrushTool {
@@ -31,6 +33,7 @@ impl BrushTool {
             BrushTool::Erase,
             BrushTool::Attract,
             BrushTool::Repel,
+            BrushTool::Obstacle,
         ]
     }
 
@@ -42,6 +45,7 @@ impl BrushTool {
             BrushTool::Erase => "Erase",
             BrushTool::Attract => "Attract",
             BrushTool::Repel => "Repel",
+            BrushTool::Obstacle => "Obstacle",
         }
     }
 
@@ -53,6 +57,7 @@ impl BrushTool {
             BrushTool::Erase => "🧹",
             BrushTool::Attract => "[>]",
             BrushTool::Repel => "[<]",
+            BrushTool::Obstacle => "[O]",
         }
     }
 }
@@ -119,6 +124,7 @@ impl BrushState {
         match self.tool {
             BrushTool::Attract => self.attract_force * 10.0,
             BrushTool::Repel => -self.repel_force * 10.0,
+            BrushTool::Obstacle => 0.0,
             _ => 0.0,
         }
     }

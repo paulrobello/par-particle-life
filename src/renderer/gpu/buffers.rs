@@ -254,6 +254,7 @@ impl BrushRenderUniform {
             crate::app::BrushTool::Erase => (0.8, 0.2, 0.2),
             crate::app::BrushTool::Attract => (0.2, 0.6, 0.9),
             crate::app::BrushTool::Repel => (0.9, 0.6, 0.2),
+            crate::app::BrushTool::Obstacle => (0.8, 0.6, 0.2),
         };
 
         Self {
@@ -264,7 +265,10 @@ impl BrushRenderUniform {
             color_g: g,
             color_b: b,
             color_a: 0.8,
-            is_visible: if brush.show_circle && brush.tool != crate::app::BrushTool::None {
+            is_visible: if brush.show_circle
+                && brush.tool != crate::app::BrushTool::None
+                && brush.tool != crate::app::BrushTool::Obstacle
+            {
                 1
             } else {
                 0

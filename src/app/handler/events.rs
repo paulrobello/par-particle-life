@@ -12,6 +12,7 @@ use winit::{
 
 use super::{AppHandler, RuleSelection};
 use crate::app::BrushTool;
+use crate::simulation::{MAX_OBSTACLES, Obstacle, ObstacleShape};
 
 impl ApplicationHandler for AppHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -52,14 +53,24 @@ impl ApplicationHandler for AppHandler {
         if let Some(gpu) = &mut self.gpu {
             let response = gpu.egui_state.on_window_event(&gpu.context.window, &event);
             egui_wants_pointer = gpu.egui_ctx.egui_wants_pointer_input();
+
+            // Track whether the cursor is over the egui UI panel (updated on move)
+            // Use screen X position vs stored panel right edge — egui_wants_pointer
+            // is unreliable (always true regardless of cursor location).
+            if let WindowEvent::CursorMoved { position, .. } = &event {
+                self.cursor_over_ui = self.show_ui && position.x as f32 <= self.ui_panel_right_edge;
+            }
+
             if response.consumed && egui_wants_pointer {
-                // Only return early if egui actually wants the pointer (over UI)
-                // But still update mouse position for smooth pan resumption
-                if let WindowEvent::CursorMoved { position, .. } = &event {
-                    self.camera.last_mouse_pos =
-                        glam::Vec2::new(position.x as f32, position.y as f32);
+                if self.brush.tool == BrushTool::Obstacle && !self.cursor_over_ui {
+                    // Fall through to obstacle handler
+                } else {
+                    if let WindowEvent::CursorMoved { position, .. } = &event {
+                        self.camera.last_mouse_pos =
+                            glam::Vec2::new(position.x as f32, position.y as f32);
+                    }
+                    return;
                 }
-                return;
             }
         }
 
@@ -75,6 +86,7 @@ impl ApplicationHandler for AppHandler {
                 self.app.config.ui_rendering_open = self.ui_rendering_open;
                 self.app.config.ui_presets_open = self.ui_presets_open;
                 self.app.config.ui_keyboard_shortcuts_open = self.ui_keyboard_shortcuts_open;
+                self.app.config.ui_obstacles_open = self.ui_obstacles_open;
 
                 // Persist current settings
                 self.app.config.sim_num_particles = self.app.sim_config.num_particles;
@@ -152,6 +164,9 @@ impl ApplicationHandler for AppHandler {
                     },
                     PhysicalKey::Code(KeyCode::KeyH) => {
                         self.show_ui = !self.show_ui;
+                        if !self.show_ui {
+                            self.ui_panel_right_edge = 0.0;
+                        }
                     }
                     PhysicalKey::Code(KeyCode::KeyC) => {
                         // Reset camera
@@ -181,12 +196,47 @@ impl ApplicationHandler for AppHandler {
                         self.camera.is_panning = false;
                     }
                 }
-                // Left mouse button for brush interaction
-                if button == MouseButton::Left && self.brush.tool != BrushTool::None {
+                // Left mouse button for brush interaction (except Obstacle tool)
+                if button == MouseButton::Left
+                    && self.brush.tool != BrushTool::None
+                    && self.brush.tool != BrushTool::Obstacle
+                {
                     if state == ElementState::Pressed && !egui_wants_pointer {
                         self.brush.is_active = true;
                     } else if state == ElementState::Released {
                         self.brush.is_active = false;
+                    }
+                }
+                // Left mouse button for obstacle tool
+                if button == MouseButton::Left
+                    && self.brush.tool == BrushTool::Obstacle
+                    && !self.cursor_over_ui
+                {
+                    if state == ElementState::Pressed {
+                        let hit = self.hit_test_obstacle(self.brush.position);
+                        if hit >= 0 {
+                            // Select existing obstacle and start drag
+                            self.selected_obstacle = hit;
+                            self.obstacle_dragging = true;
+                            let obs = &self.app.obstacles[hit as usize];
+                            self.obstacle_drag_offset = glam::Vec2::new(
+                                self.brush.position.x - obs.x,
+                                self.brush.position.y - obs.y,
+                            );
+                        } else if self.app.obstacles.len() < MAX_OBSTACLES {
+                            // Place new obstacle at cursor
+                            let obs = Obstacle {
+                                x: self.brush.position.x,
+                                y: self.brush.position.y,
+                                shape: self.obstacle_tool_shape,
+                                ..Obstacle::default()
+                            };
+                            self.app.obstacles.push(obs);
+                            self.selected_obstacle = (self.app.obstacles.len() - 1) as i32;
+                            self.sync_obstacles();
+                        }
+                    } else if state == ElementState::Released {
+                        self.obstacle_dragging = false;
                     }
                 }
             }
@@ -211,6 +261,19 @@ impl ApplicationHandler for AppHandler {
                     // Use a fixed dt estimate for velocity calculation
                     self.brush.update_position(world_pos, 1.0 / 60.0);
 
+                    // Handle obstacle dragging
+                    if self.obstacle_dragging
+                        && self.selected_obstacle >= 0
+                        && (self.selected_obstacle as usize) < self.app.obstacles.len()
+                    {
+                        let idx = self.selected_obstacle as usize;
+                        self.app.obstacles[idx].x =
+                            self.brush.position.x - self.obstacle_drag_offset.x;
+                        self.app.obstacles[idx].y =
+                            self.brush.position.y - self.obstacle_drag_offset.y;
+                        self.sync_obstacles();
+                    }
+
                     if self.camera.is_panning {
                         let delta = new_pos - self.camera.last_mouse_pos;
                         // Convert screen delta to world delta
@@ -231,6 +294,24 @@ impl ApplicationHandler for AppHandler {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 50.0,
                 };
+
+                // Resize selected obstacle when Obstacle tool is active
+                if self.brush.tool == BrushTool::Obstacle
+                    && self.selected_obstacle >= 0
+                    && !self.cursor_over_ui
+                {
+                    let idx = self.selected_obstacle as usize;
+                    if idx < self.app.obstacles.len() {
+                        let resize_factor = 1.0 + scroll_amount * 0.1;
+                        let obs = &mut self.app.obstacles[idx];
+                        obs.width = (obs.width * resize_factor).clamp(10.0, 500.0);
+                        if obs.shape == ObstacleShape::Rectangle {
+                            obs.height = (obs.height * resize_factor).clamp(10.0, 500.0);
+                        }
+                        self.sync_obstacles();
+                        return;
+                    }
+                }
 
                 // Zoom factor: positive scroll = zoom in
                 let zoom_factor = 1.0 + scroll_amount * 0.1;

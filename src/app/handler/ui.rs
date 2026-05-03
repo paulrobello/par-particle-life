@@ -7,7 +7,7 @@ use crate::generators::{
     positions::PositionPattern,
     rules::{RuleType, generate_rules},
 };
-use crate::simulation::{BoundaryMode, Obstacle, ObstacleShape, RadiusMatrix};
+use crate::simulation::{BoundaryMode, ObstacleShape, RadiusMatrix};
 use crate::video_recorder::VideoFormat;
 
 impl AppHandler {
@@ -159,7 +159,9 @@ impl AppHandler {
                                             format!("{}", n),
                                         );
                                     }
-                                });
+                                })
+                                .response
+                                .on_hover_text("Total number of particles in the simulation");
                             if num_particles != self.app.sim_config.num_particles {
                                 self.app.sim_config.num_particles = num_particles;
                                 self.app.config.sim_num_particles = num_particles;
@@ -169,7 +171,8 @@ impl AppHandler {
                             }
 
                             let mut num_types = self.app.sim_config.num_types;
-                            ui.add(egui::Slider::new(&mut num_types, 2..=16).text("Types"));
+                            ui.add(egui::Slider::new(&mut num_types, 2..=16).text("Types"))
+                                .on_hover_text("Number of distinct particle types");
                             if num_types != self.app.sim_config.num_types {
                                 self.app.sim_config.num_types = num_types;
                                 self.app.config.sim_num_types = num_types;
@@ -220,12 +223,14 @@ impl AppHandler {
                                 egui::Slider::new(&mut self.app.sim_config.force_factor, 0.1..=5.0)
                                     .text("Force Factor")
                                     .logarithmic(true),
-                            );
+                            )
+                            .on_hover_text("Global multiplier for all inter-particle forces");
                             self.app.config.phys_force_factor = self.app.sim_config.force_factor;
                             ui.add(
                                 egui::Slider::new(&mut self.app.sim_config.friction, 0.0..=1.0)
                                     .text("Friction"),
-                            );
+                            )
+                            .on_hover_text("Velocity damping per frame: 0 = full stop, 1 = no friction");
                             self.app.config.phys_friction = self.app.sim_config.friction;
                             ui.add(
                                 egui::Slider::new(
@@ -233,7 +238,8 @@ impl AppHandler {
                                     0.1..=4.0,
                                 )
                                 .text("Repel Strength"),
-                            );
+                            )
+                            .on_hover_text("Short-range repulsion to prevent particle overlap");
                             self.app.config.phys_repel_strength =
                                 self.app.sim_config.repel_strength;
                             ui.add(
@@ -242,14 +248,16 @@ impl AppHandler {
                                     1.0..=500.0,
                                 )
                                 .text("Max Velocity"),
-                            );
+                            )
+                            .on_hover_text("Maximum particle speed per frame");
                             self.app.config.phys_max_velocity = self.app.sim_config.max_velocity;
 
                             // Temperature slider
                             ui.add(
                                 egui::Slider::new(&mut self.app.sim_config.temperature, 0.0..=50.0)
                                     .text("Temperature"),
-                            );
+                            )
+                            .on_hover_text("Random jitter added to particle velocities each frame");
                             self.app.config.phys_temperature = self.app.sim_config.temperature;
 
                             ui.add(
@@ -532,29 +540,13 @@ impl AppHandler {
                     // Obstacles
                     let response = egui::CollapsingHeader::new("Obstacles")
                         .id_salt("obstacles_header")
-                        .default_open(false)
+                        .default_open(self.ui_obstacles_open)
                         .show(ui, |ui| {
-                            if self.app.obstacles.len() < crate::simulation::MAX_OBSTACLES {
-                                ui.horizontal(|ui| {
-                                    if ui.button("+ Circle").clicked() {
-                                        self.app.obstacles.push(Obstacle {
-                                            x: self.app.sim_config.world_size.x / 2.0,
-                                            y: self.app.sim_config.world_size.y / 2.0,
-                                            shape: ObstacleShape::Circle,
-                                            ..Obstacle::default()
-                                        });
-                                    }
-                                    if ui.button("+ Rectangle").clicked() {
-                                        self.app.obstacles.push(Obstacle {
-                                            x: self.app.sim_config.world_size.x / 2.0,
-                                            y: self.app.sim_config.world_size.y / 2.0,
-                                            shape: ObstacleShape::Rectangle,
-                                            ..Obstacle::default()
-                                        });
-                                    }
-                                });
-                            } else {
-                                ui.label("Max obstacles reached (16)");
+                            if self.app.obstacles.is_empty() {
+                                ui.label(
+                                    egui::RichText::new("Select Obstacle tool to place")
+                                        .small(),
+                                );
                             }
 
                             let mut to_delete: Option<usize> = None;
@@ -562,50 +554,71 @@ impl AppHandler {
                             for (i, obs) in self.app.obstacles.iter_mut().enumerate() {
                                 ui.group(|ui| {
                                     ui.horizontal(|ui| {
-                                        ui.label(match obs.shape {
-                                            ObstacleShape::Circle => format!("{}. Circle", i),
-                                            ObstacleShape::Rectangle => format!("{}. Rect", i),
-                                        });
+                                        let is_selected = self.selected_obstacle == i as i32;
+                                        let label_prefix = if is_selected { "> " } else { "  " };
+                                        let shape_name = match obs.shape {
+                                            ObstacleShape::Circle => "Circle",
+                                            ObstacleShape::Rectangle => "Rect",
+                                        };
+                                        // Draw shape icon
+                                        let icon_size = egui::vec2(14.0, 14.0);
+                                        let (icon_rect, _icon_resp) =
+                                            ui.allocate_exact_size(icon_size, egui::Sense::hover());
+                                        let painter = ui.painter();
+                                        let icon_color = if is_selected {
+                                            egui::Color32::from_rgb(255, 220, 100)
+                                        } else {
+                                            egui::Color32::from_rgb(255, 100, 100)
+                                        };
+                                        match obs.shape {
+                                            ObstacleShape::Circle => {
+                                                painter.circle_filled(
+                                                    icon_rect.center(),
+                                                    icon_rect.width() / 2.0 - 1.0,
+                                                    icon_color,
+                                                );
+                                            }
+                                            ObstacleShape::Rectangle => {
+                                                let inner = icon_rect.shrink(1.0);
+                                                painter.rect_filled(
+                                                    inner,
+                                                    1.0,
+                                                    icon_color,
+                                                );
+                                            }
+                                        }
+                                        ui.label(format!(
+                                            "{}{}. {}",
+                                            label_prefix, i, shape_name
+                                        ));
                                         if ui.small_button("✕").clicked() {
                                             to_delete = Some(i);
                                         }
                                     });
-                                    let wx = self.app.sim_config.world_size.x;
-                                    let wy = self.app.sim_config.world_size.y;
-                                    changed |= ui
-                                        .add(egui::Slider::new(&mut obs.x, 0.0..=wx).text("X"))
-                                        .changed();
-                                    changed |= ui
-                                        .add(egui::Slider::new(&mut obs.y, 0.0..=wy).text("Y"))
-                                        .changed();
-                                    changed |= ui
-                                        .add(
-                                            egui::Slider::new(&mut obs.width, 10.0..=500.0)
-                                                .text("Width"),
-                                        )
-                                        .changed();
-                                    if obs.shape == ObstacleShape::Rectangle {
-                                        changed |= ui
-                                            .add(
-                                                egui::Slider::new(&mut obs.height, 10.0..=500.0)
-                                                    .text("Height"),
-                                            )
-                                            .changed();
-                                    }
                                     changed |= ui
                                         .add(
                                             egui::Slider::new(&mut obs.bounce, 0.0..=1.0)
                                                 .text("Bounce"),
+                                        )
+                                        .on_hover_text(
+                                            "Restitution: 0 = absorb impact, 1 = full bounce",
                                         )
                                         .changed();
                                 });
                             }
                             if let Some(idx) = to_delete {
                                 self.app.obstacles.remove(idx);
+                                // Adjust selection after deletion
+                                if self.selected_obstacle == idx as i32 {
+                                    self.selected_obstacle = -1;
+                                } else if self.selected_obstacle > idx as i32 {
+                                    self.selected_obstacle -= 1;
+                                }
                                 changed = true;
                             }
                             changed
                         });
+                    self.ui_obstacles_open = response.openness > 0.5;
                     if response.body_returned.unwrap_or(false) {
                         self.sync_obstacles();
                     }
@@ -646,7 +659,9 @@ impl AppHandler {
             });
 
         // Draw obstacle overlays on top of GPU render
-        if !self.app.obstacles.is_empty() {
+        let show_obstacle_overlay =
+            !self.app.obstacles.is_empty() || self.brush.tool == BrushTool::Obstacle;
+        if show_obstacle_overlay {
             let painter = ctx.layer_painter(egui::LayerId::new(
                 egui::Order::Foreground,
                 egui::Id::new("obstacles"),
@@ -665,7 +680,7 @@ impl AppHandler {
                 ));
             let world_size = self.app.sim_config.world_size;
 
-            for obs in &self.app.obstacles {
+            for (i, obs) in self.app.obstacles.iter().enumerate() {
                 // World to screen conversion (inverse of CameraState::screen_to_world)
                 let norm_x =
                     ((obs.x - self.camera.offset.x) * 2.0 / world_size.x - 1.0) * self.camera.zoom;
@@ -675,8 +690,19 @@ impl AppHandler {
                 let sy = (norm_y + 1.0) * 0.5 * screen_size.y;
                 let center = egui::pos2(sx, sy);
 
-                let fill = egui::Color32::from_rgba_unmultiplied(255, 50, 50, 40);
-                let stroke = egui::Color32::from_rgba_unmultiplied(255, 100, 100, 120);
+                let is_selected =
+                    self.brush.tool == BrushTool::Obstacle && self.selected_obstacle == i as i32;
+                let fill = if is_selected {
+                    egui::Color32::from_rgba_unmultiplied(255, 200, 50, 100)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(255, 50, 50, 80)
+                };
+                let stroke = if is_selected {
+                    egui::Color32::from_rgba_unmultiplied(255, 220, 100, 200)
+                } else {
+                    egui::Color32::from_rgba_unmultiplied(255, 100, 100, 120)
+                };
+                let stroke_width = if is_selected { 3.0 } else { 2.0 };
 
                 match obs.shape {
                     ObstacleShape::Circle => {
@@ -686,7 +712,7 @@ impl AppHandler {
                         painter.circle_stroke(
                             center,
                             screen_radius,
-                            egui::Stroke::new(2.0, stroke),
+                            egui::Stroke::new(stroke_width, stroke),
                         );
                     }
                     ObstacleShape::Rectangle => {
@@ -697,13 +723,64 @@ impl AppHandler {
                         painter.rect_stroke(
                             rect,
                             2.0,
-                            egui::Stroke::new(2.0, stroke),
+                            egui::Stroke::new(stroke_width, stroke),
+                            egui::StrokeKind::Outside,
+                        );
+                    }
+                }
+            }
+
+            // Draw shape preview cursor for Obstacle tool placement
+            if self.brush.tool == BrushTool::Obstacle
+                && !self.cursor_over_ui
+                && !self.obstacle_dragging
+            {
+                let cursor_world = self.brush.position;
+                let norm_cx = ((cursor_world.x - self.camera.offset.x) * 2.0 / world_size.x - 1.0)
+                    * self.camera.zoom;
+                let norm_cy = ((cursor_world.y - self.camera.offset.y) * 2.0 / world_size.y - 1.0)
+                    * self.camera.zoom;
+                let cx = (norm_cx + 1.0) * 0.5 * screen_size.x;
+                let cy = (norm_cy + 1.0) * 0.5 * screen_size.y;
+                let center = egui::pos2(cx, cy);
+                let preview_color = egui::Color32::from_rgba_unmultiplied(255, 200, 50, 150);
+                let preview_stroke = egui::Color32::from_rgba_unmultiplied(255, 220, 100, 220);
+                let default_half = 50.0_f32; // half of default width (100)
+                let screen_scale = self.camera.zoom * screen_size.x / world_size.x;
+                let preview_r = default_half * screen_scale;
+
+                match self.obstacle_tool_shape {
+                    ObstacleShape::Circle => {
+                        painter.circle_filled(center, preview_r, preview_color);
+                        painter.circle_stroke(
+                            center,
+                            preview_r,
+                            egui::Stroke::new(2.0, preview_stroke),
+                        );
+                    }
+                    ObstacleShape::Rectangle => {
+                        let rect = egui::Rect::from_center_size(
+                            center,
+                            egui::vec2(preview_r * 2.0, preview_r * 2.0),
+                        );
+                        painter.rect_filled(rect, 2.0, preview_color);
+                        painter.rect_stroke(
+                            rect,
+                            2.0,
+                            egui::Stroke::new(2.0, preview_stroke),
                             egui::StrokeKind::Outside,
                         );
                     }
                 }
             }
         }
+
+        // Store the panel's right edge in screen pixels for cursor tracking.
+        // Uses the available rect (area not occupied by the panel).
+        #[allow(deprecated)]
+        let available = ctx.available_rect();
+        let pixels_per_point = ctx.pixels_per_point();
+        self.ui_panel_right_edge = available.left() * pixels_per_point;
     }
 
     fn draw_brush_tools(&mut self, ui: &mut egui::Ui) {
@@ -711,13 +788,21 @@ impl AppHandler {
         ui.horizontal(|ui| {
             for &tool in BrushTool::all() {
                 let selected = self.brush.tool == tool;
-                let text = if tool == BrushTool::Erase {
-                    format!("{} {}", tool.icon(), tool.name())
-                } else {
-                    tool.name().to_string()
-                };
-                if ui.selectable_label(selected, text).clicked() {
+                let text = tool.name().to_string();
+                let resp = ui
+                    .selectable_label(selected, text)
+                    .on_hover_text(match tool {
+                        BrushTool::None => "No brush tool active",
+                        BrushTool::Draw => "Add particles at cursor",
+                        BrushTool::Erase => "Remove particles at cursor",
+                        BrushTool::Attract => "Pull particles toward cursor",
+                        BrushTool::Repel => "Push particles away from cursor",
+                        BrushTool::Obstacle => "Place and edit obstacles",
+                    });
+                if resp.clicked() {
                     self.brush.tool = tool;
+                    self.selected_obstacle = -1;
+                    self.obstacle_dragging = false;
                 }
             }
         });
@@ -725,27 +810,33 @@ impl AppHandler {
         if self.brush.tool != BrushTool::None {
             ui.separator();
 
-            // Brush radius
-            ui.add(
-                egui::Slider::new(&mut self.brush.radius, 20.0..=500.0)
-                    .text("Radius")
-                    .logarithmic(true),
-            );
+            // Brush radius (not for Obstacle tool)
+            if self.brush.tool != BrushTool::Obstacle {
+                ui.add(
+                    egui::Slider::new(&mut self.brush.radius, 20.0..=500.0)
+                        .text("Radius")
+                        .logarithmic(true),
+                )
+                .on_hover_text("Brush area of effect radius in world units");
+            }
 
             // Force settings
             if self.brush.tool == BrushTool::Attract {
                 ui.add(
                     egui::Slider::new(&mut self.brush.attract_force, 1.0..=100.0)
                         .text("Attract Force"),
-                );
+                )
+                .on_hover_text("Strength of attraction toward brush center");
             } else if self.brush.tool == BrushTool::Repel {
                 ui.add(
                     egui::Slider::new(&mut self.brush.repel_force, 1.0..=100.0).text("Repel Force"),
-                );
+                )
+                .on_hover_text("Strength of repulsion away from brush center");
             } else if self.brush.tool == BrushTool::Draw {
                 ui.add(
                     egui::Slider::new(&mut self.brush.draw_intensity, 1..=200).text("Intensity"),
-                );
+                )
+                .on_hover_text("Number of particles spawned per frame");
 
                 // Type selector for Draw tool
                 let num_types = self.app.sim_config.num_types as i32;
@@ -759,7 +850,6 @@ impl AppHandler {
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.brush.draw_type, -1, "Random");
                         for i in 0..num_types {
-                            // Show color swatch with type number
                             let color = self.app.colors[i as usize];
                             let label = format!("Type {}", i);
                             ui.horizontal(|ui| {
@@ -797,7 +887,6 @@ impl AppHandler {
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.brush.target_type, -1, "All");
                         for i in 0..num_types {
-                            // Show color swatch with type number
                             let color = self.app.colors[i as usize];
                             let label = format!("Type {}", i);
                             ui.horizontal(|ui| {
@@ -822,6 +911,50 @@ impl AppHandler {
                             });
                         }
                     });
+            } else if self.brush.tool == BrushTool::Obstacle {
+                // Shape selector
+                egui::ComboBox::from_label("Shape")
+                    .selected_text(match self.obstacle_tool_shape {
+                        ObstacleShape::Circle => "Circle",
+                        ObstacleShape::Rectangle => "Rectangle",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.obstacle_tool_shape,
+                            ObstacleShape::Circle,
+                            "Circle",
+                        );
+                        ui.selectable_value(
+                            &mut self.obstacle_tool_shape,
+                            ObstacleShape::Rectangle,
+                            "Rectangle",
+                        );
+                    })
+                    .response
+                    .on_hover_text("Shape for the next obstacle placed by clicking");
+
+                // Bounce slider for selected obstacle
+                if self.selected_obstacle >= 0 {
+                    let idx = self.selected_obstacle as usize;
+                    if idx < self.app.obstacles.len() {
+                        let obs = &mut self.app.obstacles[idx];
+                        if ui
+                            .add(egui::Slider::new(&mut obs.bounce, 0.0..=1.0).text("Bounce"))
+                            .on_hover_text("Restitution: 0 = absorb impact, 1 = full bounce")
+                            .changed()
+                        {
+                            self.sync_obstacles();
+                        }
+                    }
+                } else if self.app.obstacles.len() >= crate::simulation::MAX_OBSTACLES {
+                    ui.colored_label(
+                        egui::Color32::YELLOW,
+                        format!(
+                            "Max obstacles reached ({})",
+                            crate::simulation::MAX_OBSTACLES
+                        ),
+                    );
+                }
             }
 
             // Directional force (for attract/repel)
@@ -829,14 +962,26 @@ impl AppHandler {
                 ui.add(
                     egui::Slider::new(&mut self.brush.directional_force, 0.0..=100.0)
                         .text("Directional"),
-                );
+                )
+                .on_hover_text("Force applied in the direction of brush movement");
             }
 
-            // Show circle toggle
-            ui.checkbox(&mut self.brush.show_circle, "Show Circle");
+            // Show circle toggle (not for Obstacle tool)
+            if self.brush.tool != BrushTool::Obstacle {
+                ui.checkbox(&mut self.brush.show_circle, "Show Circle")
+                    .on_hover_text("Toggle the brush area indicator overlay");
+            }
 
             ui.separator();
-            ui.label("Left-click to use brush");
+            match self.brush.tool {
+                BrushTool::Obstacle => {
+                    ui.label("Click to place/select, drag to move");
+                    ui.label("Scroll to resize selected obstacle");
+                }
+                _ => {
+                    ui.label("Left-click to use brush");
+                }
+            }
         }
     }
 
@@ -844,7 +989,8 @@ impl AppHandler {
         ui.add(
             egui::Slider::new(&mut self.app.sim_config.particle_size, 0.1..=2.0)
                 .text("Particle Size"),
-        );
+        )
+        .on_hover_text("Base size of rendered particles");
         self.app.config.render_particle_size = self.app.sim_config.particle_size;
 
         // Per-type size multipliers
@@ -877,6 +1023,7 @@ impl AppHandler {
 
         let vsync_changed = ui
             .checkbox(&mut self.app.config.vsync, "VSync (present)")
+            .on_hover_text("Sync frames to display refresh rate (reduces tearing)")
             .changed();
         if vsync_changed {
             self.pending_vsync = Some(self.app.config.vsync);
