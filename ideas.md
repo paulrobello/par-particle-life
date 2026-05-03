@@ -14,14 +14,8 @@ Allow the interaction matrix to evolve over time — slow drift, periodic oscill
 
 ## Generators
 
-### User-Defined Custom Rule Generators
-Allow users to write simple rule generator functions via a text input (e.g., a mini-DSL or JSON template) rather than being limited to the 31 built-in rule types. Store custom generators alongside presets.
-
 ### Gallery of Curated Presets
 Build a curated collection of "best of" presets with descriptive names (e.g., "Predator-Prey Swarm", "Crystalline Lattice", "Spiral Galaxy"). The current preset system is bare — adding a gallery with thumbnails would make the app more approachable.
-
-### Interaction Matrix Templates
-Provide named templates for common matrix patterns: fully symmetric, fully antisymmetric, block-diagonal (alliances), cyclic pursuit, random sparse. Currently users must hand-edit the NxN grid or rely on random generation.
 
 ### Gradient Position Generators
 Add position generators where particle types are placed along a gradient (linear, radial, angular) rather than randomly or in discrete clusters. Useful for studying front propagation and mixing dynamics.

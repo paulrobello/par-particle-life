@@ -6,6 +6,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use super::{AppConfig, handler::AppHandler};
 use crate::generators::{
     colors::{Color, PaletteType, generate_colors},
+    custom::CustomGenerator,
     positions::{PositionPattern, SpawnConfig, generate_positions},
     rules::{RuleType, generate_rules},
 };
@@ -45,6 +46,8 @@ pub struct App {
     pub type_sizes: Vec<f32>,
     /// Obstacle zones that deflect particles.
     pub obstacles: Vec<Obstacle>,
+    /// User-defined custom rule generators.
+    pub custom_generators: Vec<CustomGenerator>,
 }
 
 impl App {
@@ -117,6 +120,10 @@ impl App {
         let type_masses = vec![1.0; num_types];
         let type_sizes = vec![1.0; num_types];
         let obstacles = Vec::new();
+        let custom_generators = CustomGenerator::list().unwrap_or_else(|e| {
+            log::warn!("Failed to load custom generators: {e}");
+            Vec::new()
+        });
 
         Self {
             config,
@@ -134,6 +141,7 @@ impl App {
             type_masses,
             type_sizes,
             obstacles,
+            custom_generators,
         }
     }
 
@@ -187,6 +195,16 @@ impl App {
     /// Regenerate the color palette.
     pub fn regenerate_colors(&mut self) {
         self.colors = generate_colors(self.current_palette, self.sim_config.num_types as usize);
+    }
+
+    /// Generate rules from a custom generator, with error handling.
+    pub fn generate_custom_rules(&mut self, index: usize) -> Result<InteractionMatrix, String> {
+        let num_types = self.sim_config.num_types as usize;
+        self.custom_generators
+            .get_mut(index)
+            .ok_or_else(|| format!("Custom generator index {index} out of range"))?
+            .generate(num_types)
+            .map_err(|e| e.to_string())
     }
 
     /// Resize per-type arrays (masses, sizes) to match current num_types.

@@ -1,6 +1,6 @@
 //! UI rendering using egui.
 
-use super::AppHandler;
+use super::{AppHandler, RuleSelection};
 use crate::app::{BrushTool, Preset};
 use crate::generators::{
     colors::{PaletteType, generate_colors},
@@ -362,27 +362,92 @@ impl AppHandler {
                         .default_open(self.ui_generators_open)
                         .show(ui, |ui| {
                             // Rule type
-                            let rule_name = format!("{:?}", self.app.current_rule);
-                            let mut new_rule = self.app.current_rule;
+                            let rule_label = match &self.rule_selection {
+                                RuleSelection::BuiltIn(rt) => rt.display_name().to_owned(),
+                                RuleSelection::Custom(idx) => {
+                                    self.app.custom_generators.get(*idx)
+                                        .map(|g| g.name.clone())
+                                        .unwrap_or_else(|| "Custom (missing)".into())
+                                }
+                            };
+
+                            let mut selection_changed = false;
+                            let mut new_selection = self.rule_selection.clone();
+
                             egui::ComboBox::from_label("Rules")
-                                .selected_text(&rule_name)
+                                .selected_text(&rule_label)
                                 .show_ui(ui, |ui| {
                                     for &rule in RuleType::all() {
-                                        let name = format!("{:?}", rule);
-                                        ui.selectable_value(&mut new_rule, rule, name);
+                                        let name = rule.display_name();
+                                        let selected = matches!(&self.rule_selection, RuleSelection::BuiltIn(rt) if *rt == rule);
+                                        if ui.selectable_label(selected, name).clicked() {
+                                            new_selection = RuleSelection::BuiltIn(rule);
+                                            selection_changed = true;
+                                        }
+                                    }
+
+                                    if !self.app.custom_generators.is_empty() {
+                                        ui.separator();
+                                        for (idx, generator) in self.app.custom_generators.iter().enumerate() {
+                                            let selected = matches!(&self.rule_selection, RuleSelection::Custom(i) if *i == idx);
+                                            if ui.selectable_label(selected, &generator.name).clicked() {
+                                                new_selection = RuleSelection::Custom(idx);
+                                                selection_changed = true;
+                                            }
+                                        }
                                     }
                                 });
-                            if new_rule != self.app.current_rule {
-                                self.app.current_rule = new_rule;
-                                self.app.config.gen_rule = new_rule;
-                                self.app.regenerate_rules();
-                                self.sync_interaction_matrix();
+
+                            if selection_changed {
+                                self.rule_selection = new_selection;
+                                match &self.rule_selection {
+                                    RuleSelection::BuiltIn(rule) => {
+                                        self.app.current_rule = *rule;
+                                        self.app.config.gen_rule = *rule;
+                                        self.app.regenerate_rules();
+                                        self.sync_interaction_matrix();
+                                    }
+                                    RuleSelection::Custom(idx) => {
+                                        match self.app.generate_custom_rules(*idx) {
+                                            Ok(matrix) => {
+                                                self.app.interaction_matrix = matrix;
+                                                self.sync_interaction_matrix();
+                                                self.preset_status.clear();
+                                            }
+                                            Err(e) => {
+                                                self.preset_status = format!("Custom generator error: {e}");
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             if ui.button("🎲 Randomize Rules").clicked() {
                                 self.app.regenerate_rules();
                                 self.sync_interaction_matrix();
                             }
+
+                            ui.horizontal(|ui| {
+                                if ui.button("Open Custom Generators").clicked()
+                                    && let Ok(dir) =
+                                        crate::generators::custom::CustomGenerator::ensure_dir()
+                                {
+                                    #[cfg(target_os = "macos")]
+                                    let _ = std::process::Command::new("open").arg(&dir).spawn();
+                                    #[cfg(target_os = "linux")]
+                                    let _ = std::process::Command::new("xdg-open")
+                                        .arg(&dir)
+                                        .spawn();
+                                    #[cfg(target_os = "windows")]
+                                    let _ = std::process::Command::new("explorer")
+                                        .arg(&dir)
+                                        .spawn();
+                                }
+                                if ui.button("Reload").clicked() {
+                                    self.app.custom_generators = crate::generators::custom::CustomGenerator::list()
+                                        .unwrap_or_default();
+                                }
+                            });
 
                             ui.separator();
 

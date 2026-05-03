@@ -10,7 +10,7 @@ use winit::{
     window::{WindowAttributes, WindowId},
 };
 
-use super::AppHandler;
+use super::{AppHandler, RuleSelection};
 use crate::app::BrushTool;
 
 impl ApplicationHandler for AppHandler {
@@ -134,10 +134,22 @@ impl ApplicationHandler for AppHandler {
                         self.app.regenerate_particles();
                         self.sync_buffers();
                     }
-                    PhysicalKey::Code(KeyCode::KeyM) => {
-                        self.app.regenerate_rules();
-                        self.sync_interaction_matrix();
-                    }
+                    PhysicalKey::Code(KeyCode::KeyM) => match &self.rule_selection {
+                        RuleSelection::BuiltIn(_) => {
+                            self.app.regenerate_rules();
+                            self.sync_interaction_matrix();
+                        }
+                        RuleSelection::Custom(idx) => match self.app.generate_custom_rules(*idx) {
+                            Ok(matrix) => {
+                                self.app.interaction_matrix = matrix;
+                                self.sync_interaction_matrix();
+                                self.preset_status.clear();
+                            }
+                            Err(e) => {
+                                self.preset_status = format!("Custom generator error: {e}");
+                            }
+                        },
+                    },
                     PhysicalKey::Code(KeyCode::KeyH) => {
                         self.show_ui = !self.show_ui;
                     }

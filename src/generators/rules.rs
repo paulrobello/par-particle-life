@@ -1,6 +1,6 @@
 //! Rule generators for creating interaction matrices.
 //!
-//! This module contains 31 different algorithms for generating
+//! This module contains 34 different algorithms for generating
 //! particle interaction matrices, ranging from simple random
 //! patterns to complex mathematical constructs.
 
@@ -46,6 +46,9 @@ pub enum RuleType {
     TriSpiral = 28,
     VortexAntivortex = 29,
     DriftedPatchwork = 30,
+    BlockDiagonal = 31,
+    CyclicPursuit = 32,
+    RandomSparse = 33,
 }
 
 impl RuleType {
@@ -83,6 +86,9 @@ impl RuleType {
             RuleType::TriSpiral,
             RuleType::VortexAntivortex,
             RuleType::DriftedPatchwork,
+            RuleType::BlockDiagonal,
+            RuleType::CyclicPursuit,
+            RuleType::RandomSparse,
         ]
     }
 
@@ -120,6 +126,9 @@ impl RuleType {
             RuleType::TriSpiral => "Tri-Spiral",
             RuleType::VortexAntivortex => "Vortex–Antivortex Lattice",
             RuleType::DriftedPatchwork => "Drifted Patchwork",
+            RuleType::BlockDiagonal => "Block-Diagonal (Alliances)",
+            RuleType::CyclicPursuit => "Cyclic Pursuit",
+            RuleType::RandomSparse => "Random Sparse",
         }
     }
 
@@ -182,6 +191,9 @@ pub fn generate_rules(rule_type: RuleType, num_types: usize) -> InteractionMatri
         RuleType::TriSpiral => tri_spiral_generator(num_types),
         RuleType::VortexAntivortex => vortex_antivortex_generator(num_types),
         RuleType::DriftedPatchwork => drifted_patchwork_generator(num_types),
+        RuleType::BlockDiagonal => block_diagonal_generator(num_types),
+        RuleType::CyclicPursuit => cyclic_pursuit_generator(num_types),
+        RuleType::RandomSparse => random_sparse_generator(num_types),
     };
 
     // Round all values to 2 decimal places for consistency
@@ -919,6 +931,82 @@ fn drifted_patchwork_generator(n: usize) -> InteractionMatrix {
             matrix.set(i, j, base * mask);
         }
     }
+    matrix
+}
+
+/// Block-Diagonal: alliance groups with positive intra-block, negative inter-block.
+fn block_diagonal_generator(n: usize) -> InteractionMatrix {
+    let mut rng = rand::rng();
+    let mut matrix = InteractionMatrix::new(n);
+
+    let num_blocks = if n <= 4 { 2 } else { 3 };
+    let block_of = |t: usize| -> usize {
+        let block_size = n.div_ceil(num_blocks);
+        (t / block_size).min(num_blocks - 1)
+    };
+
+    for i in 0..n {
+        for j in 0..n {
+            if i == j {
+                matrix.set(i, j, 0.0);
+            } else if block_of(i) == block_of(j) {
+                let val: f32 = rng.random::<f32>() * 0.7 + 0.1;
+                matrix.set(i, j, val);
+            } else {
+                let val: f32 = -(rng.random::<f32>() * 0.7 + 0.1);
+                matrix.set(i, j, val);
+            }
+        }
+    }
+
+    matrix
+}
+
+/// Cyclic Pursuit: each type chases the next in a cycle.
+fn cyclic_pursuit_generator(n: usize) -> InteractionMatrix {
+    let mut rng = rand::rng();
+    let mut matrix = InteractionMatrix::new(n);
+
+    if n < 3 {
+        let mut m = random_generator(n);
+        m.symmetrize();
+        return m;
+    }
+
+    for i in 0..n {
+        for j in 0..n {
+            if j == i {
+                matrix.set(i, j, 0.0);
+            } else if j == (i + 1) % n {
+                matrix.set(i, j, 0.8);
+            } else if j == (i + n - 1) % n {
+                matrix.set(i, j, -0.5);
+            } else {
+                let noise: f32 = rng.random::<f32>() * 0.2 - 0.1;
+                matrix.set(i, j, noise);
+            }
+        }
+    }
+
+    matrix
+}
+
+/// Random Sparse: ~70% zero cells, rest random [-1, 1].
+fn random_sparse_generator(n: usize) -> InteractionMatrix {
+    let mut rng = rand::rng();
+    let mut matrix = InteractionMatrix::new(n);
+
+    for i in 0..n {
+        for j in 0..n {
+            if i == j {
+                matrix.set(i, j, 0.0);
+            } else if rng.random::<f32>() < 0.3 {
+                let val: f32 = rng.random::<f32>() * 2.0 - 1.0;
+                matrix.set(i, j, val);
+            }
+        }
+    }
+
     matrix
 }
 

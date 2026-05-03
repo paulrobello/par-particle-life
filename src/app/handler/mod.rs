@@ -18,7 +18,16 @@ use std::time::Instant;
 
 use crate::app::gpu_state::GpuState;
 use crate::app::{App, BrushState, CameraState, Preset};
+use crate::generators::RuleType;
 use crate::video_recorder::{VideoFormat, VideoRecorder};
+
+/// Tracks whether the current rule selection is a built-in type or custom generator.
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // variants/fields consumed by subsequent tasks
+pub(crate) enum RuleSelection {
+    BuiltIn(RuleType),
+    Custom(usize),
+}
 
 /// Application handler for the winit event loop.
 pub(crate) struct AppHandler {
@@ -104,6 +113,9 @@ pub(crate) struct AppHandler {
     pub(crate) last_log_time: Instant,
     /// When true, run exactly one frame then pause (step-by-step mode).
     pub(crate) step_requested: bool,
+    /// Current rule selection (built-in or custom generator).
+    #[allow(dead_code)] // consumed by subsequent tasks
+    pub(crate) rule_selection: RuleSelection,
 }
 
 impl AppHandler {
@@ -159,6 +171,8 @@ impl AppHandler {
         let ui_rendering_open = app.config.ui_rendering_open;
         let ui_presets_open = app.config.ui_presets_open;
         let ui_keyboard_shortcuts_open = app.config.ui_keyboard_shortcuts_open;
+
+        let current_rule = app.current_rule;
 
         let mouse_screen_pos = glam::Vec2::ZERO;
         let last_log_time = Instant::now();
@@ -219,6 +233,7 @@ impl AppHandler {
             needs_sync_spatial_buffers: false,
             last_log_time,
             step_requested: false,
+            rule_selection: RuleSelection::BuiltIn(current_rule),
         }
     }
 }

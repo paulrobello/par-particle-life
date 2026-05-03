@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file.
 - **Simulation Speed Control**: Time-scale slider (0.1x–5.0x) for slow-motion and fast-forward. Step-by-step mode to advance one frame at a time while paused.
 - **Velocity Coupling**: Alignment force based on relative neighbor velocity (0.0–1.0), enabling boid-like flocking behavior. Implemented in both GPU compute shaders and CPU fallback.
 - **Obstacle Regions**: GPU-accelerated circular and rectangular obstacle zones that deflect particles with configurable bounce strength. Up to 16 obstacles with per-obstacle position, size, and bounce controls. Semi-transparent egui overlay rendering. Included in preset save/load.
+- Interaction Matrix Templates: BlockDiagonal, CyclicPursuit, RandomSparse rule generators
+- Custom Rule Generators: user-defined generators via JSON files with expression DSL
+- Expression DSL supporting i, j, n variables, arithmetic, comparisons, ternary, and built-in functions
+- "Open Custom Generators" and "Reload" buttons in the Generators UI section
+- Rules dropdown now uses display_name() for all generators
 
 ## [0.2.0] - 2026-05-02
 
