@@ -231,6 +231,17 @@ impl ComputePipelines {
                     },
                     count: None,
                 },
+                // obstacles (storage, read-only)
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -292,6 +303,7 @@ impl ComputePipelines {
         vel: &Buffer,
         params: &Buffer,
         brush_params: &Buffer,
+        obstacles: &Buffer,
     ) -> BindGroup {
         device.create_bind_group(&BindGroupDescriptor {
             label: Some("Advance Bind Group"),
@@ -312,6 +324,10 @@ impl ComputePipelines {
                 BindGroupEntry {
                     binding: 3,
                     resource: brush_params.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: obstacles.as_entire_binding(),
                 },
             ],
         })

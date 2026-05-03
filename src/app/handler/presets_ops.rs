@@ -19,6 +19,7 @@ impl AppHandler {
             self.app.current_pattern,
             &self.app.type_masses,
             &self.app.type_sizes,
+            &self.app.obstacles,
         );
 
         match Preset::ensure_presets_dir() {
@@ -58,6 +59,7 @@ impl AppHandler {
                 self.app.current_pattern = preset.position_pattern;
                 self.app.type_masses = preset.type_masses;
                 self.app.type_sizes = preset.type_sizes;
+                self.app.obstacles = preset.obstacles;
 
                 // Mirror into persisted config so settings survive restart
                 self.app.config.sim_num_particles = self.app.sim_config.num_particles;
@@ -81,6 +83,8 @@ impl AppHandler {
                 self.app.config.render_spatial_hash_cell_size =
                     self.app.sim_config.spatial_hash_cell_size;
                 self.app.config.phys_temperature = self.app.sim_config.temperature;
+                self.app.config.phys_time_scale = self.app.sim_config.time_scale;
+                self.app.config.phys_velocity_coupling = self.app.sim_config.velocity_coupling;
 
                 // Regenerate colors from palette
                 self.app.colors = crate::generators::colors::generate_colors(
@@ -107,6 +111,7 @@ impl AppHandler {
                 self.sync_buffers();
                 self.sync_interaction_matrix();
                 self.sync_colors();
+                self.sync_obstacles();
 
                 self.preset_status = format!("Loaded: {}", name);
                 log::info!("Loaded preset: {}", name);

@@ -24,10 +24,10 @@ struct SimParams {
     dt: f32,
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
-    _padding0: u32,
+    velocity_coupling: f32,
     temperature: f32,
     frame_counter: u32,
-    _padding1: u32,
+    num_obstacles: u32,
     _padding2: u32,
     _padding3: u32,
 }
@@ -119,6 +119,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         }
 
         total_force = total_force + direction * force_magnitude;
+
+        // Velocity alignment force (boid-like behavior)
+        if (params.velocity_coupling > 0.0 && dist >= min_r) {
+            let other_vel = vec2<f32>(vel_in[j]);
+            let vel_delta = other_vel - my_vel;
+            let t = (dist - min_r) / (max_r - min_r);
+            total_force = total_force + vel_delta * params.velocity_coupling * (1.0 - t);
+        }
     }
 
     // Apply wall repulsion for Repel mode (configurable strength 0-100)

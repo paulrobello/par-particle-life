@@ -75,6 +75,18 @@ impl AppHandler {
                 gpu.mirror_bind_group = new_mirror_bind_group;
                 gpu.infinite_bind_group = new_infinite_bind_group;
 
+                // Sync obstacles to new buffers
+                let obs_data: Vec<crate::simulation::ObstacleData> =
+                    self.app.obstacles.iter().map(|o| o.into()).collect();
+                gpu.buffers.num_obstacles = self.app.obstacles.len() as u32;
+                if !obs_data.is_empty() {
+                    gpu.buffers.update_obstacles(
+                        &gpu.context.queue,
+                        &obs_data,
+                        gpu.buffers.num_obstacles,
+                    );
+                }
+
                 // Always invalidate spatial bind groups since they reference sim_buffers
                 // which were just recreated above
                 gpu.spatial_bind_groups.invalidate();
@@ -185,6 +197,19 @@ impl AppHandler {
         }
     }
 
+    pub(crate) fn sync_obstacles(&mut self) {
+        if let Some(gpu) = &self.gpu {
+            let obs_data: Vec<crate::simulation::ObstacleData> =
+                self.app.obstacles.iter().map(|o| o.into()).collect();
+            let count = obs_data.len() as u32;
+            gpu.buffers
+                .update_obstacles(&gpu.context.queue, &obs_data, count);
+        }
+        if let Some(gpu) = &mut self.gpu {
+            gpu.buffers.num_obstacles = self.app.obstacles.len() as u32;
+        }
+    }
+
     /// Resets all application settings and simulation state to their default values.
     pub(crate) fn reset_to_defaults(&mut self) {
         // Reset AppConfig to default
@@ -233,6 +258,7 @@ impl AppHandler {
         self.brush = crate::app::BrushState::default();
 
         // Ensure GPU buffers are updated with new state
+        self.app.obstacles.clear();
         self.sync_buffers();
         self.update_camera();
         self.sync_interaction_matrix();

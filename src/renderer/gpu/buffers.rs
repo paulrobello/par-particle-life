@@ -7,8 +7,8 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::{Buffer, BufferUsages, Device, Queue, util::DeviceExt};
 
 use crate::simulation::{
-    InteractionMatrix, Particle, ParticlePosType, ParticleVel, ParticleVelHalf, RadiusMatrix,
-    SimulationConfig,
+    InteractionMatrix, MAX_OBSTACLES, ObstacleData, Particle, ParticlePosType, ParticleVel,
+    ParticleVelHalf, RadiusMatrix, SimulationConfig,
 };
 
 /// Parameters for spatial hashing uniform buffer.
@@ -314,14 +314,16 @@ pub struct SimParamsUniform {
     pub max_bin_density: f32,
     /// Maximum neighbors to check per particle (0 = unlimited).
     pub neighbor_budget: u32,
-    /// Padding for alignment.
-    _padding0: u32,
+    /// Velocity coupling strength for boid-like alignment.
+    pub velocity_coupling: f32,
     /// Temperature / Brownian noise strength.
     pub temperature: f32,
     /// Frame counter for GPU noise seeding.
     pub frame_counter: u32,
+    /// Number of obstacles.
+    pub num_obstacles: u32,
     /// Remaining padding.
-    _padding1: [u32; 3],
+    _padding2: [u32; 2],
 }
 
 impl SimParamsUniform {
@@ -349,10 +351,11 @@ impl SimParamsUniform {
             dt,
             max_bin_density: config.max_bin_density,
             neighbor_budget: config.neighbor_budget,
-            _padding0: 0,
+            velocity_coupling: config.velocity_coupling,
             temperature: config.temperature,
             frame_counter: config.frame_counter,
-            _padding1: [0; 3],
+            num_obstacles: 0,
+            _padding2: [0; 2],
         }
     }
 }
@@ -383,6 +386,10 @@ pub struct SimulationBuffers {
     pub type_masses: Buffer,
     /// Per-type size multiplier buffer.
     pub type_sizes: Buffer,
+    /// Obstacle data storage buffer.
+    pub obstacles: Buffer,
+    /// Current number of obstacles.
+    pub num_obstacles: u32,
     /// Current number of particles.
     pub num_particles: u32,
     /// Current number of particle types.
@@ -518,6 +525,15 @@ impl SimulationBuffers {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
         });
 
+        // Create obstacles buffer (pre-allocated for MAX_OBSTACLES)
+        let obstacles_buffer_size = (MAX_OBSTACLES * std::mem::size_of::<ObstacleData>()) as u64;
+        let obstacles = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Obstacles Buffer"),
+            size: obstacles_buffer_size,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         Self {
             pos_type: [pt0, pt1],
             velocities: [vel_buffer_0, vel_buffer_1],
@@ -529,6 +545,8 @@ impl SimulationBuffers {
             colors: colors_buffer,
             type_masses: type_masses_buffer,
             type_sizes: type_sizes_buffer,
+            obstacles,
+            num_obstacles: 0,
             num_particles,
             num_types,
             use_f16,
@@ -608,7 +626,8 @@ impl SimulationBuffers {
 
     /// Update simulation parameters uniform.
     pub fn update_params(&self, queue: &Queue, config: &SimulationConfig, dt: f32) {
-        let params = SimParamsUniform::from_config(config, dt);
+        let mut params = SimParamsUniform::from_config(config, dt);
+        params.num_obstacles = self.num_obstacles;
         queue.write_buffer(&self.params, 0, bytemuck::bytes_of(&params));
     }
 
@@ -623,6 +642,14 @@ impl SimulationBuffers {
 
     pub fn update_type_sizes(&self, queue: &Queue, sizes: &[f32]) {
         queue.write_buffer(&self.type_sizes, 0, bytemuck::cast_slice(sizes));
+    }
+
+    /// Update obstacle data buffer.
+    pub fn update_obstacles(&self, queue: &Queue, obstacles: &[ObstacleData], _count: u32) {
+        if !obstacles.is_empty() {
+            let len = obstacles.len().min(MAX_OBSTACLES);
+            queue.write_buffer(&self.obstacles, 0, bytemuck::cast_slice(&obstacles[..len]));
+        }
     }
 
     /// Read particles back from GPU (for debugging or saving).

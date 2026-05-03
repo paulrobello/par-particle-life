@@ -145,6 +145,13 @@ pub fn compute_forces_cpu(
                     let t = (dist - min_r) / (max_r - min_r);
                     force += direction * strength * (1.0 - t);
                 }
+
+                // Velocity alignment force
+                if config.velocity_coupling > 0.0 && dist >= min_r {
+                    let vel_delta = Vec2::new(q.vx - p.vx, q.vy - p.vy);
+                    let t = (dist - min_r) / (max_r - min_r);
+                    force += vel_delta * config.velocity_coupling * (1.0 - t);
+                }
             }
 
             force / config.force_factor / type_masses[p_type]
@@ -211,6 +218,13 @@ fn compute_forces_spatial(
                 let strength = interaction_matrix.get(p_type, q_type);
                 let t = (dist - min_r) / (max_r - min_r);
                 *force += direction * strength * (1.0 - t);
+            }
+
+            // Velocity alignment force
+            if config.velocity_coupling > 0.0 && dist >= min_r {
+                let vel_delta = Vec2::new(q.vx - p.vx, q.vy - p.vy);
+                let t = (dist - min_r) / (max_r - min_r);
+                *force += vel_delta * config.velocity_coupling * (1.0 - t);
             }
         }
 

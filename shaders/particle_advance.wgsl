@@ -23,10 +23,10 @@ struct SimParams {
     dt: f32,
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
-    _padding0: u32,
+    velocity_coupling: f32,
     temperature: f32,
     frame_counter: u32,
-    _padding1: u32,
+    num_obstacles: u32,
     _padding2: u32,
     _padding3: u32,
 }
@@ -69,6 +69,17 @@ fn pcg_hash(input: u32) -> u32 {
 @group(0) @binding(1) var<storage, read_write> vel: array<vec2<VEL_FLOAT>>;
 @group(0) @binding(2) var<uniform> params: SimParams;
 @group(0) @binding(3) var<uniform> brush: BrushParams;
+
+struct ObstacleData {
+    pos_x: f32,
+    pos_y: f32,
+    size_a: f32,
+    size_b: f32,
+    shape: u32,
+    bounce: f32,
+}
+
+@group(0) @binding(4) var<storage, read> obstacles: array<ObstacleData>;
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -152,6 +163,46 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     // Update position
     particle_pos.x = particle_pos.x + particle_vel.x * params.dt;
     particle_pos.y = particle_pos.y + particle_vel.y * params.dt;
+
+    // Handle obstacle collisions
+    for (var obs_idx = 0u; obs_idx < params.num_obstacles; obs_idx = obs_idx + 1u) {
+        let obs = obstacles[obs_idx];
+        let obs_pos = vec2<f32>(obs.pos_x, obs.pos_y);
+        var delta = particle_pos - obs_pos;
+
+        if (obs.shape == 0u) {
+            // Circle collision
+            let dist = length(delta);
+            let radius = obs.size_a;
+            if (dist < radius) {
+                let normal = delta / max(dist, 0.001);
+                particle_pos = obs_pos + normal * radius;
+                let vel_dot_normal = dot(particle_vel, normal);
+                if (vel_dot_normal < 0.0) {
+                    particle_vel = particle_vel - (1.0 + obs.bounce) * vel_dot_normal * normal;
+                }
+            }
+        } else {
+            // Rectangle collision
+            let half_w = obs.size_a;
+            let half_h = obs.size_b;
+
+            if (abs(delta.x) < half_w && abs(delta.y) < half_h) {
+                let dx = half_w - abs(delta.x);
+                let dy = half_h - abs(delta.y);
+
+                if (dx < dy) {
+                    let sign_x = select(1.0, -1.0, delta.x < 0.0);
+                    particle_pos.x = obs_pos.x + sign_x * half_w;
+                    particle_vel.x = -particle_vel.x * obs.bounce;
+                } else {
+                    let sign_y = select(1.0, -1.0, delta.y < 0.0);
+                    particle_pos.y = obs_pos.y + sign_y * half_h;
+                    particle_vel.y = -particle_vel.y * obs.bounce;
+                }
+            }
+        }
+    }
 
     let margin = params.particle_size;
 

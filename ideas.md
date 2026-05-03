@@ -10,12 +10,6 @@ Add Verlet / RK4 integration as an alternative to the current Euler method. High
 ### Time-Varying Interaction Matrices
 Allow the interaction matrix to evolve over time — slow drift, periodic oscillation, or response to global metrics (e.g., entropy, clustering). Could produce dynamic ecosystems that shift between behaviors rather than settling into a single steady state.
 
-### Velocity-Dependent Forces
-Add an option where the interaction force between two particles depends on their relative velocity (e.g., alignment forces like in boid models). This would bridge particle life with flocking/orientation-based simulations.
-
-### Obstacle Regions
-Add static circular/rectangular obstacle zones that particles cannot enter. Particles would bounce off or wrap around obstacles, enabling "maze" and "container" experiments.
-
 ---
 
 ## Generators
@@ -41,9 +35,6 @@ Allow users to create and save custom color palettes (pick N colors) rather than
 
 ### Interactive Matrix Heatmap View
 Replace the current scroll-wheel NxN grid with a proper heatmap editor: click-drag to paint values, drag sliders for row/column, double-click to set exact value. The current tooltip + scroll interaction is hard to discover and slow for large matrices.
-
-### Simulation Speed Control
-Add a time-scale slider (0.1x–5x) and a step-by-step mode (advance one frame at a time). Currently you can only pause or run at full speed.
 
 ### Undo/Redo for Rule Changes
 Track interaction matrix edits so users can undo/redo changes. The matrix editor is the primary creative tool — accidental scroll-wheel changes are currently irreversible.

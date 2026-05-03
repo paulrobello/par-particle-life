@@ -23,10 +23,10 @@ struct SimParams {
     dt: f32,
     max_bin_density: f32,
     neighbor_budget: u32, // Max neighbors to check per particle (0 = unlimited)
-    _padding0: u32,
+    velocity_coupling: f32,
     temperature: f32,
     frame_counter: u32,
-    _padding1: u32,
+    num_obstacles: u32,
     _padding2: u32,
     _padding3: u32,
 }

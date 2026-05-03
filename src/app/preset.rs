@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::generators::{colors::PaletteType, positions::PositionPattern, rules::RuleType};
-use crate::simulation::{InteractionMatrix, RadiusMatrix, SimulationConfig};
+use crate::simulation::{InteractionMatrix, Obstacle, RadiusMatrix, SimulationConfig};
 
 /// A saved simulation preset containing all configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +31,9 @@ pub struct Preset {
     /// Per-type size multiplier values.
     #[serde(default = "default_type_sizes")]
     pub type_sizes: Vec<f32>,
+    /// Obstacle zones.
+    #[serde(default)]
+    pub obstacles: Vec<Obstacle>,
 }
 
 fn default_type_masses() -> Vec<f32> {
@@ -54,6 +57,7 @@ impl Preset {
         position_pattern: PositionPattern,
         type_masses: &[f32],
         type_sizes: &[f32],
+        obstacles: &[Obstacle],
     ) -> Self {
         Self {
             name: name.into(),
@@ -65,6 +69,7 @@ impl Preset {
             position_pattern,
             type_masses: type_masses.to_vec(),
             type_sizes: type_sizes.to_vec(),
+            obstacles: obstacles.to_vec(),
         }
     }
 

@@ -99,6 +99,7 @@ impl AppHandler {
             vel_out, // Read/Write velocities
             &gpu.buffers.params,
             &gpu.brush_pipelines.brush_buffer,
+            &gpu.buffers.obstacles,
         );
 
         // Force computation pass
@@ -298,6 +299,7 @@ impl AppHandler {
             vel_out, // In-place update (after force pass wrote to it)
             &gpu.buffers.params,
             &gpu.brush_pipelines.brush_buffer,
+            &gpu.buffers.obstacles,
         );
 
         // Binned force computation
@@ -535,6 +537,7 @@ impl AppHandler {
             vel_out,
             &gpu.buffers.params,
             &gpu.brush_pipelines.brush_buffer,
+            &gpu.buffers.obstacles,
         );
 
         // Binned force computation

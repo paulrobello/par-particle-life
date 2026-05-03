@@ -32,7 +32,7 @@ impl AppHandler {
             self.last_fps_time = now;
         }
 
-        let dt_capped = dt.min(1.0 / 30.0); // Cap dt to avoid instability
+        let dt_capped = dt.min(1.0 / 30.0) * self.app.sim_config.time_scale; // Cap dt, apply time scale
 
         // Increment frame counter for GPU noise seeding
         self.app.sim_config.frame_counter = self.app.sim_config.frame_counter.wrapping_add(1);
@@ -65,9 +65,10 @@ impl AppHandler {
             );
         }
 
-        if self.app.running {
+        if self.app.running || self.step_requested {
             // GPU compute physics
             self.run_gpu_compute(dt_capped);
+            self.step_requested = false;
         }
 
         // --- Start of Logging and Dynamic Adjustment Block (Moved to End) ---

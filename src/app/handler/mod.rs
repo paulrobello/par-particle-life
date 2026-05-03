@@ -102,6 +102,8 @@ pub(crate) struct AppHandler {
     pub(crate) needs_sync_spatial_buffers: bool,
     /// Last time metrics were logged.
     pub(crate) last_log_time: Instant,
+    /// When true, run exactly one frame then pause (step-by-step mode).
+    pub(crate) step_requested: bool,
 }
 
 impl AppHandler {
@@ -216,6 +218,7 @@ impl AppHandler {
             needs_sync: false,
             needs_sync_spatial_buffers: false,
             last_log_time,
+            step_requested: false,
         }
     }
 }

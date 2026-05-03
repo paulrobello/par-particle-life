@@ -103,6 +103,14 @@ pub struct AppConfig {
     /// Physics: temperature / Brownian noise strength.
     #[serde(default)]
     pub phys_temperature: f32,
+
+    /// Physics: time scale factor for slow-motion / fast-forward.
+    #[serde(default)]
+    pub phys_time_scale: f32,
+
+    /// Physics: velocity coupling for boid-like alignment.
+    #[serde(default)]
+    pub phys_velocity_coupling: f32,
 }
 
 impl Default for AppConfig {
@@ -155,6 +163,12 @@ impl Default for AppConfig {
 
             // Temperature
             phys_temperature: 0.0,
+
+            // Time scale
+            phys_time_scale: 1.0,
+
+            // Velocity coupling
+            phys_velocity_coupling: 0.0,
         }
     }
 }

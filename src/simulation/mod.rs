@@ -2,12 +2,14 @@
 
 mod boundary;
 mod game_of_life;
+mod obstacle;
 mod particle;
 mod physics;
 mod spatial_hash;
 
 pub use boundary::BoundaryMode;
 pub use game_of_life::GameOfLife;
+pub use obstacle::{MAX_OBSTACLES, Obstacle, ObstacleData, ObstacleShape};
 pub use particle::{
     InteractionMatrix, Particle, ParticlePosType, ParticlePosTypeHalf, ParticleVel,
     ParticleVelHalf, RadiusMatrix,
@@ -96,6 +98,14 @@ pub struct SimulationConfig {
     /// Frame counter for seeding GPU random noise. Incremented each frame.
     #[serde(default)]
     pub frame_counter: u32,
+
+    /// Time scale factor (0.1 - 5.0). Multiplied with dt for slow-motion or fast-forward.
+    #[serde(default)]
+    pub time_scale: f32,
+
+    /// Velocity coupling strength (0.0 - 1.0). When > 0, particles align velocities with neighbors.
+    #[serde(default)]
+    pub velocity_coupling: f32,
 }
 
 /// Default value for max_bin_density (used by serde).
@@ -131,6 +141,8 @@ impl Default for SimulationConfig {
             neighbor_budget: 0, // 0 = unlimited (default), set non-zero to cap iterations in dense clusters
             temperature: 0.0,
             frame_counter: 0,
+            time_scale: 1.0,
+            velocity_coupling: 0.0,
         }
     }
 }

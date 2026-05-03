@@ -10,7 +10,7 @@ use crate::generators::{
     rules::{RuleType, generate_rules},
 };
 use crate::simulation::{
-    InteractionMatrix, Particle, PhysicsEngine, RadiusMatrix, SimulationConfig,
+    InteractionMatrix, Obstacle, Particle, PhysicsEngine, RadiusMatrix, SimulationConfig,
 };
 
 /// Main application state.
@@ -43,6 +43,8 @@ pub struct App {
     pub type_masses: Vec<f32>,
     /// Per-type size multiplier on global particle_size.
     pub type_sizes: Vec<f32>,
+    /// Obstacle zones that deflect particles.
+    pub obstacles: Vec<Obstacle>,
 }
 
 impl App {
@@ -74,6 +76,8 @@ impl App {
             spatial_hash_cell_size: config.render_spatial_hash_cell_size,
             use_spatial_hash: true, // always on
             temperature: config.phys_temperature,
+            time_scale: config.phys_time_scale,
+            velocity_coupling: config.phys_velocity_coupling,
             ..SimulationConfig::default()
         };
         // Enforce current max particle size limit
@@ -112,6 +116,7 @@ impl App {
 
         let type_masses = vec![1.0; num_types];
         let type_sizes = vec![1.0; num_types];
+        let obstacles = Vec::new();
 
         Self {
             config,
@@ -128,6 +133,7 @@ impl App {
             auto_scale_radii,
             type_masses,
             type_sizes,
+            obstacles,
         }
     }
 

@@ -7,7 +7,7 @@ use crate::generators::{
     positions::PositionPattern,
     rules::{RuleType, generate_rules},
 };
-use crate::simulation::{BoundaryMode, RadiusMatrix};
+use crate::simulation::{BoundaryMode, Obstacle, ObstacleShape, RadiusMatrix};
 use crate::video_recorder::VideoFormat;
 
 impl AppHandler {
@@ -97,6 +97,19 @@ impl AppHandler {
                         }
                     });
                     ui.checkbox(&mut self.capture_hide_ui, "Hide UI for capture");
+
+                    // Speed control
+                    ui.add(
+                        egui::Slider::new(&mut self.app.sim_config.time_scale, 0.1..=5.0)
+                            .text("Speed")
+                            .logarithmic(true),
+                    );
+                    self.app.config.phys_time_scale = self.app.sim_config.time_scale;
+
+                    // Step button (only when paused)
+                    if !self.app.running && ui.button("⏭ Step").clicked() {
+                        self.step_requested = true;
+                    }
 
                     // Video format selection (only when not recording)
                     ui.horizontal(|ui| {
@@ -238,6 +251,16 @@ impl AppHandler {
                                     .text("Temperature"),
                             );
                             self.app.config.phys_temperature = self.app.sim_config.temperature;
+
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut self.app.sim_config.velocity_coupling,
+                                    0.0..=1.0,
+                                )
+                                .text("Velocity Coupling"),
+                            );
+                            self.app.config.phys_velocity_coupling =
+                                self.app.sim_config.velocity_coupling;
 
                             // Boundary mode
                             let boundary_modes = [
@@ -441,6 +464,87 @@ impl AppHandler {
                         });
                     self.ui_brush_tools_open = response.openness > 0.5;
 
+                    // Obstacles
+                    let response = egui::CollapsingHeader::new("Obstacles")
+                        .id_salt("obstacles_header")
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            if self.app.obstacles.len() < crate::simulation::MAX_OBSTACLES {
+                                ui.horizontal(|ui| {
+                                    if ui.button("+ Circle").clicked() {
+                                        self.app.obstacles.push(Obstacle {
+                                            x: self.app.sim_config.world_size.x / 2.0,
+                                            y: self.app.sim_config.world_size.y / 2.0,
+                                            shape: ObstacleShape::Circle,
+                                            ..Obstacle::default()
+                                        });
+                                    }
+                                    if ui.button("+ Rectangle").clicked() {
+                                        self.app.obstacles.push(Obstacle {
+                                            x: self.app.sim_config.world_size.x / 2.0,
+                                            y: self.app.sim_config.world_size.y / 2.0,
+                                            shape: ObstacleShape::Rectangle,
+                                            ..Obstacle::default()
+                                        });
+                                    }
+                                });
+                            } else {
+                                ui.label("Max obstacles reached (16)");
+                            }
+
+                            let mut to_delete: Option<usize> = None;
+                            let mut changed = false;
+                            for (i, obs) in self.app.obstacles.iter_mut().enumerate() {
+                                ui.group(|ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(match obs.shape {
+                                            ObstacleShape::Circle => format!("{}. Circle", i),
+                                            ObstacleShape::Rectangle => format!("{}. Rect", i),
+                                        });
+                                        if ui.small_button("✕").clicked() {
+                                            to_delete = Some(i);
+                                        }
+                                    });
+                                    let wx = self.app.sim_config.world_size.x;
+                                    let wy = self.app.sim_config.world_size.y;
+                                    changed |= ui
+                                        .add(egui::Slider::new(&mut obs.x, 0.0..=wx).text("X"))
+                                        .changed();
+                                    changed |= ui
+                                        .add(egui::Slider::new(&mut obs.y, 0.0..=wy).text("Y"))
+                                        .changed();
+                                    changed |= ui
+                                        .add(
+                                            egui::Slider::new(&mut obs.width, 10.0..=500.0)
+                                                .text("Width"),
+                                        )
+                                        .changed();
+                                    if obs.shape == ObstacleShape::Rectangle {
+                                        changed |= ui
+                                            .add(
+                                                egui::Slider::new(&mut obs.height, 10.0..=500.0)
+                                                    .text("Height"),
+                                            )
+                                            .changed();
+                                    }
+                                    changed |= ui
+                                        .add(
+                                            egui::Slider::new(&mut obs.bounce, 0.0..=1.0)
+                                                .text("Bounce"),
+                                        )
+                                        .changed();
+                                });
+                            }
+                            if let Some(idx) = to_delete {
+                                self.app.obstacles.remove(idx);
+                                changed = true;
+                            }
+                            changed
+                        });
+                    if response.body_returned.unwrap_or(false) {
+                        self.sync_obstacles();
+                    }
+
                     // Rendering settings
                     let response = egui::CollapsingHeader::new("Rendering")
                         .id_salt("rendering_header")
@@ -475,6 +579,66 @@ impl AppHandler {
                     self.ui_keyboard_shortcuts_open = response.openness > 0.5;
                 });
             });
+
+        // Draw obstacle overlays on top of GPU render
+        if !self.app.obstacles.is_empty() {
+            let painter = ctx.layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                egui::Id::new("obstacles"),
+            ));
+
+            let screen_size = self
+                .gpu
+                .as_ref()
+                .map(|g| {
+                    let (w, h) = g.context.surface_size();
+                    glam::Vec2::new(w as f32, h as f32)
+                })
+                .unwrap_or(glam::Vec2::new(
+                    self.app.sim_config.world_size.x,
+                    self.app.sim_config.world_size.y,
+                ));
+            let world_size = self.app.sim_config.world_size;
+
+            for obs in &self.app.obstacles {
+                // World to screen conversion (inverse of CameraState::screen_to_world)
+                let norm_x =
+                    ((obs.x - self.camera.offset.x) * 2.0 / world_size.x - 1.0) * self.camera.zoom;
+                let norm_y =
+                    ((obs.y - self.camera.offset.y) * 2.0 / world_size.y - 1.0) * self.camera.zoom;
+                let sx = (norm_x + 1.0) * 0.5 * screen_size.x;
+                let sy = (norm_y + 1.0) * 0.5 * screen_size.y;
+                let center = egui::pos2(sx, sy);
+
+                let fill = egui::Color32::from_rgba_unmultiplied(255, 50, 50, 40);
+                let stroke = egui::Color32::from_rgba_unmultiplied(255, 100, 100, 120);
+
+                match obs.shape {
+                    ObstacleShape::Circle => {
+                        let screen_radius =
+                            (obs.width / 2.0) * self.camera.zoom * screen_size.x / world_size.x;
+                        painter.circle_filled(center, screen_radius, fill);
+                        painter.circle_stroke(
+                            center,
+                            screen_radius,
+                            egui::Stroke::new(2.0, stroke),
+                        );
+                    }
+                    ObstacleShape::Rectangle => {
+                        let sw = obs.width * self.camera.zoom * screen_size.x / world_size.x;
+                        let sh = obs.height * self.camera.zoom * screen_size.y / world_size.y;
+                        let rect = egui::Rect::from_center_size(center, egui::vec2(sw, sh));
+                        painter.rect_filled(rect, 2.0, fill);
+                        painter.rect_stroke(
+                            rect,
+                            2.0,
+                            egui::Stroke::new(2.0, stroke),
+                            egui::StrokeKind::Outside,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn draw_brush_tools(&mut self, ui: &mut egui::Ui) {
