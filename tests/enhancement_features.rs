@@ -188,7 +188,75 @@ fn matrix_variation_oscillates_from_base_without_mutating_it() {
     assert!(varied.data.iter().all(|value| (-1.0..=1.0).contains(value)));
 }
 
+use par_particle_life::renderer::gpu::{SimParamsUniform, SimulationBuffers};
 use par_particle_life::simulation::Particle;
+
+fn request_headless_wgpu_device() -> Option<(wgpu::Device, wgpu::Queue)> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::all(),
+        ..wgpu::InstanceDescriptor::new_without_display_handle()
+    });
+
+    let adapter = match pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::LowPower,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    })) {
+        Ok(adapter) => adapter,
+        Err(err) => {
+            eprintln!("skipping production-path GPU params test: no wgpu adapter available: {err}");
+            return None;
+        }
+    };
+
+    match pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+        label: Some("enhancement_features test device"),
+        required_features: wgpu::Features::empty(),
+        required_limits: wgpu::Limits::default(),
+        memory_hints: wgpu::MemoryHints::Performance,
+        ..Default::default()
+    })) {
+        Ok(device_queue) => Some(device_queue),
+        Err(err) => {
+            eprintln!("skipping production-path GPU params test: no wgpu device available: {err}");
+            None
+        }
+    }
+}
+
+fn read_sim_params_uniform(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    buffer: &wgpu::Buffer,
+) -> SimParamsUniform {
+    let size = std::mem::size_of::<SimParamsUniform>() as u64;
+    let staging = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Simulation Params Test Readback"),
+        size,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("Simulation Params Test Readback Encoder"),
+    });
+    encoder.copy_buffer_to_buffer(buffer, 0, &staging, 0, size);
+    queue.submit(std::iter::once(encoder.finish()));
+
+    let slice = staging.slice(..);
+    let (tx, rx) = std::sync::mpsc::channel();
+    slice.map_async(wgpu::MapMode::Read, move |result| {
+        let _ = tx.send(result);
+    });
+    device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
+    rx.recv().unwrap().unwrap();
+
+    let mapped = slice.get_mapped_range();
+    let params = *bytemuck::from_bytes::<SimParamsUniform>(&mapped);
+    drop(mapped);
+    staging.unmap();
+    params
+}
 
 #[test]
 fn set_particle_count_preserves_existing_particles_when_growing() {
@@ -253,6 +321,59 @@ fn sim_params_uniform_uses_explicit_active_particle_count() {
     assert_eq!(params.num_particles, 42);
     assert_eq!(params.num_types, config.num_types);
     assert_eq!(params.dt, 0.125);
+}
+
+#[test]
+fn simulation_buffers_production_paths_write_active_particle_count_to_uniform() {
+    let Some((device, queue)) = request_headless_wgpu_device() else {
+        return;
+    };
+
+    let particles = vec![
+        Particle::with_velocity(10.0, 20.0, 1.0, 2.0, 0),
+        Particle::with_velocity(30.0, 40.0, 3.0, 4.0, 1),
+        Particle::with_velocity(50.0, 60.0, 5.0, 6.0, 2),
+    ];
+    let config = SimulationConfig {
+        num_particles: 999,
+        num_types: 3,
+        ..SimulationConfig::default()
+    };
+    let num_types = config.num_types as usize;
+    let interaction_matrix = InteractionMatrix::filled(num_types, 0.0);
+    let radius_matrix = RadiusMatrix::default_for_size(num_types);
+    let colors = vec![[1.0, 1.0, 1.0, 1.0]; num_types];
+    let type_masses = vec![1.0; num_types];
+    let type_sizes = vec![1.0; num_types];
+
+    let mut buffers = SimulationBuffers::new(
+        &device,
+        &particles,
+        &interaction_matrix,
+        &radius_matrix,
+        &colors,
+        &type_masses,
+        &type_sizes,
+        &config,
+    );
+
+    let initial_params = read_sim_params_uniform(&device, &queue, &buffers.params);
+    assert_eq!(initial_params.num_particles, 3);
+
+    buffers.set_num_particles(2);
+    buffers.update_params(&queue, &config, 1.0 / 60.0);
+    let updated_params = read_sim_params_uniform(&device, &queue, &buffers.params);
+    assert_eq!(updated_params.num_particles, 2);
+
+    assert!(buffers.has_capacity_for(128_000));
+    let over_capacity = buffers.capacity_particles + 1;
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let panic_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        buffers.set_num_particles(over_capacity);
+    }));
+    std::panic::set_hook(previous_hook);
+    assert!(panic_result.is_err());
 }
 
 #[test]

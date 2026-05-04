@@ -588,7 +588,7 @@ impl SimulationBuffers {
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Simulation Params Buffer"),
             contents: bytemuck::bytes_of(&params),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
         });
 
         // Create color palette buffer
