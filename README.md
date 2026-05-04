@@ -29,12 +29,15 @@ See the [Configuration Guide](docs/CONFIGURATION.md) for detailed setup instruct
 
 - **GPU-Accelerated** - Efficient WebGPU compute shaders for physics simulation
 - **Spatial Hashing** - O(n*k) neighbor queries instead of O(n²)
+- **GPU-Driven Drawing** - Draw brush spawns particles directly on GPU, no CPU readback
+- **Particle Count Hot-Swap** - Change particle count without resetting the simulation
 - **31 Rule Generators** - Random, Symmetric, Snake, Rock-Paper-Scissors, and more
 - **37 Color Palettes** - Rainbow, Pastel, CyberNeon, Aurora, and more
 - **28 Spawn Patterns** - Disk, Spiral, Grid, Yin-Yang, and more
 - **4 Boundary Modes** - Repel, Wrap, Mirror Wrap, Infinite Tiling
 - **Real-time Adjustment** - Modify all parameters while simulation runs
 - **Interactive Brushes** - Draw, Erase, Attract, Repel particles
+- **Obstacle Regions** - Circular and rectangular obstacles with interactive placement
 - **Video Recording** - MP4, WebM, and GIF output (requires ffmpeg)
 - **Preset System** - Save and load simulation configurations
 - **VSync Toggle** - Uncapped framerates for performance testing
