@@ -237,3 +237,35 @@ fn set_particle_count_truncates_without_regenerating_prefix() {
     assert_eq!(app.particles[1].y, 40.0);
     assert_eq!(app.particles[1].vy, 4.0);
 }
+
+#[test]
+fn particle_buffer_capacity_has_ui_hot_swap_headroom() {
+    assert_eq!(
+        par_particle_life::renderer::gpu::SimulationBuffers::capacity_for_particle_count(1_000),
+        128_000
+    );
+    assert_eq!(
+        par_particle_life::renderer::gpu::SimulationBuffers::capacity_for_particle_count(64_000),
+        128_000
+    );
+    assert_eq!(
+        par_particle_life::renderer::gpu::SimulationBuffers::capacity_for_particle_count(200_000),
+        200_000
+    );
+}
+
+#[test]
+fn particle_range_byte_offsets_match_soa_layout() {
+    assert_eq!(
+        par_particle_life::renderer::gpu::SimulationBuffers::pos_type_byte_offset(3),
+        (3 * std::mem::size_of::<par_particle_life::simulation::ParticlePosType>()) as u64
+    );
+    assert_eq!(
+        par_particle_life::renderer::gpu::SimulationBuffers::velocity_byte_offset_f32(3),
+        (3 * std::mem::size_of::<par_particle_life::simulation::ParticleVel>()) as u64
+    );
+    assert_eq!(
+        par_particle_life::renderer::gpu::SimulationBuffers::velocity_byte_offset_f16(3),
+        (3 * std::mem::size_of::<par_particle_life::simulation::ParticleVelHalf>()) as u64
+    );
+}

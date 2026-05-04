@@ -402,8 +402,10 @@ pub struct SimulationBuffers {
     pub obstacles: Buffer,
     /// Current number of obstacles.
     pub num_obstacles: u32,
-    /// Current number of particles.
+    /// Current number of active particles.
     pub num_particles: u32,
+    /// Allocated particle capacity in each particle buffer.
+    pub capacity_particles: u32,
     /// Current number of particle types.
     pub num_types: u32,
     /// Whether to use half-precision (f16) for particle storage.
@@ -411,6 +413,52 @@ pub struct SimulationBuffers {
 }
 
 impl SimulationBuffers {
+    /// Minimum capacity that lets the current UI particle-count choices hot-swap without reallocating.
+    pub const MIN_HOT_SWAP_CAPACITY: u32 = 128_000;
+
+    /// Choose a buffer capacity for the requested active particle count.
+    pub fn capacity_for_particle_count(active_particles: u32) -> u32 {
+        active_particles.max(Self::MIN_HOT_SWAP_CAPACITY)
+    }
+
+    /// Byte offset into position/type buffers for a particle index.
+    pub fn pos_type_byte_offset(index: u32) -> u64 {
+        index as u64 * std::mem::size_of::<ParticlePosType>() as u64
+    }
+
+    /// Byte offset into f32 velocity buffers for a particle index.
+    pub fn velocity_byte_offset_f32(index: u32) -> u64 {
+        index as u64 * std::mem::size_of::<ParticleVel>() as u64
+    }
+
+    /// Byte offset into f16 velocity buffers for a particle index.
+    pub fn velocity_byte_offset_f16(index: u32) -> u64 {
+        index as u64 * std::mem::size_of::<ParticleVelHalf>() as u64
+    }
+
+    /// Current velocity byte offset for the configured velocity representation.
+    pub fn velocity_byte_offset(&self, index: u32) -> u64 {
+        if self.use_f16 {
+            Self::velocity_byte_offset_f16(index)
+        } else {
+            Self::velocity_byte_offset_f32(index)
+        }
+    }
+
+    /// Set the active particle count without reallocating buffers.
+    pub fn set_num_particles(&mut self, num_particles: u32) {
+        assert!(
+            num_particles <= self.capacity_particles,
+            "active particle count exceeds allocated GPU capacity"
+        );
+        self.num_particles = num_particles;
+    }
+
+    /// Return true when the buffers can hold the requested active count.
+    pub fn has_capacity_for(&self, target_count: u32) -> bool {
+        target_count <= self.capacity_particles
+    }
+
     /// Create new simulation buffers.
     ///
     /// # Arguments
@@ -432,7 +480,11 @@ impl SimulationBuffers {
         config: &SimulationConfig,
     ) -> Self {
         let num_particles = particles.len() as u32;
+        let capacity_particles = Self::capacity_for_particle_count(num_particles);
         let num_types = config.num_types;
+
+        let mut padded_particles = particles.to_vec();
+        padded_particles.resize(capacity_particles as usize, Particle::default());
 
         // Check if we should use F16 (based on device features)
         // We can't access device features directly from here easily without passing them or checking device.
@@ -443,7 +495,7 @@ impl SimulationBuffers {
         // Note: Positions are always F32 to ensure precision for large world coordinates.
         // Velocities can be F16 to save bandwidth.
         let pos_type_data: Vec<ParticlePosType> =
-            particles.iter().map(ParticlePosType::from).collect();
+            padded_particles.iter().map(ParticlePosType::from).collect();
 
         let pt0 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Particle Pos/Type Buffer 0"),
@@ -458,7 +510,7 @@ impl SimulationBuffers {
 
         let (vel_buffer_0, vel_buffer_1, velocity_scratch) = if use_f16 {
             let vel_data: Vec<ParticleVelHalf> =
-                particles.iter().map(ParticleVelHalf::from).collect();
+                padded_particles.iter().map(ParticleVelHalf::from).collect();
             let vel_bytes = bytemuck::cast_slice(&vel_data);
 
             let v0 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -478,7 +530,8 @@ impl SimulationBuffers {
             });
             (v0, v1, scratch)
         } else {
-            let vel_data: Vec<ParticleVel> = particles.iter().map(ParticleVel::from).collect();
+            let vel_data: Vec<ParticleVel> =
+                padded_particles.iter().map(ParticleVel::from).collect();
             let vel_bytes = bytemuck::cast_slice(&vel_data);
 
             let v0 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -573,6 +626,7 @@ impl SimulationBuffers {
             obstacles,
             num_obstacles: 0,
             num_particles,
+            capacity_particles,
             num_types,
             use_f16,
         }
@@ -601,6 +655,21 @@ impl SimulationBuffers {
     /// Byte size of one velocity buffer.
     pub fn velocity_buffer_size(&self) -> u64 {
         let num = self.num_particles as u64;
+        if self.use_f16 {
+            num * std::mem::size_of::<ParticleVelHalf>() as u64
+        } else {
+            num * std::mem::size_of::<ParticleVel>() as u64
+        }
+    }
+
+    /// Byte size for allocated particles in one position/type buffer.
+    pub fn pos_type_capacity_buffer_size(&self) -> u64 {
+        self.capacity_particles as u64 * std::mem::size_of::<ParticlePosType>() as u64
+    }
+
+    /// Byte size for allocated particles in one velocity buffer.
+    pub fn velocity_capacity_buffer_size(&self) -> u64 {
+        let num = self.capacity_particles as u64;
         if self.use_f16 {
             num * std::mem::size_of::<ParticleVelHalf>() as u64
         } else {
