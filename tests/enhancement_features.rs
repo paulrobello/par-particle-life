@@ -239,6 +239,23 @@ fn set_particle_count_truncates_without_regenerating_prefix() {
 }
 
 #[test]
+fn sim_params_uniform_uses_explicit_active_particle_count() {
+    let config = SimulationConfig {
+        num_particles: 128,
+        num_types: 3,
+        ..SimulationConfig::default()
+    };
+
+    let params = par_particle_life::renderer::gpu::SimParamsUniform::from_config_with_num_particles(
+        &config, 0.125, 42,
+    );
+
+    assert_eq!(params.num_particles, 42);
+    assert_eq!(params.num_types, config.num_types);
+    assert_eq!(params.dt, 0.125);
+}
+
+#[test]
 fn particle_buffer_capacity_has_ui_hot_swap_headroom() {
     assert_eq!(
         par_particle_life::renderer::gpu::SimulationBuffers::capacity_for_particle_count(1_000),

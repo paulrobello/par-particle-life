@@ -335,10 +335,19 @@ pub struct SimParamsUniform {
 impl SimParamsUniform {
     /// Create uniform parameters from simulation config.
     pub fn from_config(config: &SimulationConfig, dt: f32) -> Self {
+        Self::from_config_with_num_particles(config, dt, config.num_particles)
+    }
+
+    /// Create uniform parameters from simulation config with an explicit active particle count.
+    pub fn from_config_with_num_particles(
+        config: &SimulationConfig,
+        dt: f32,
+        active_num_particles: u32,
+    ) -> Self {
         use crate::simulation::BoundaryMode;
 
         Self {
-            num_particles: config.num_particles,
+            num_particles: active_num_particles,
             num_types: config.num_types,
             force_factor: config.force_factor,
             friction: config.friction,
@@ -574,7 +583,8 @@ impl SimulationBuffers {
         });
 
         // Create simulation params uniform buffer
-        let params = SimParamsUniform::from_config(config, 1.0 / 60.0);
+        let params =
+            SimParamsUniform::from_config_with_num_particles(config, 1.0 / 60.0, num_particles);
         let params_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Simulation Params Buffer"),
             contents: bytemuck::bytes_of(&params),
@@ -732,7 +742,8 @@ impl SimulationBuffers {
 
     /// Update simulation parameters uniform.
     pub fn update_params(&self, queue: &Queue, config: &SimulationConfig, dt: f32) {
-        let mut params = SimParamsUniform::from_config(config, dt);
+        let mut params =
+            SimParamsUniform::from_config_with_num_particles(config, dt, self.num_particles);
         params.num_obstacles = self.num_obstacles;
         queue.write_buffer(&self.params, 0, bytemuck::bytes_of(&params));
     }
