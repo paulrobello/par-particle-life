@@ -216,6 +216,32 @@ impl App {
         self.physics.resize(self.particles.len());
     }
 
+    /// Resize the particle list while preserving existing particle state.
+    /// New particles are spawned at random zero-velocity positions.
+    pub fn set_particle_count_preserving_existing(&mut self, target_count: u32) {
+        let target_len = target_count as usize;
+        let current_len = self.particles.len();
+
+        if target_len < current_len {
+            self.particles.truncate(target_len);
+        } else if target_len > current_len {
+            let mut rng = rand::rng();
+            let additional = target_len - current_len;
+            self.particles.reserve(additional);
+            for _ in 0..additional {
+                self.particles.push(Particle::random_in_world(
+                    &mut rng,
+                    self.sim_config.world_size.x,
+                    self.sim_config.world_size.y,
+                    self.sim_config.num_types,
+                ));
+            }
+        }
+
+        self.sim_config.num_particles = target_count;
+        self.physics.resize(target_len);
+    }
+
     /// Regenerate the interaction matrix with the current rule type.
     pub fn regenerate_rules(&mut self) {
         self.matrix_variation_base =

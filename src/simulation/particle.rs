@@ -1,6 +1,7 @@
 //! Particle data structures for the simulation.
 
 use bytemuck::{Pod, Zeroable};
+use rand::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 
 /// A single particle in the simulation.
@@ -70,6 +71,19 @@ impl Particle {
             _padding1: [0; 3],
             _padding2: [0; 4],
         }
+    }
+
+    /// Create a zero-velocity particle at a random position inside the world.
+    pub fn random_in_world<R: Rng + ?Sized>(
+        rng: &mut R,
+        world_width: f32,
+        world_height: f32,
+        num_types: u32,
+    ) -> Self {
+        let x = rng.random::<f32>() * world_width;
+        let y = rng.random::<f32>() * world_height;
+        let particle_type = rng.random_range(0..num_types.max(1));
+        Self::new(x, y, particle_type)
     }
 
     /// Get position as a glam Vec2.

@@ -187,3 +187,53 @@ fn matrix_variation_oscillates_from_base_without_mutating_it() {
     assert_eq!(base.get(0, 0), 0.0);
     assert!(varied.data.iter().all(|value| (-1.0..=1.0).contains(value)));
 }
+
+use par_particle_life::simulation::Particle;
+
+#[test]
+fn set_particle_count_preserves_existing_particles_when_growing() {
+    let mut app = par_particle_life::app::App::new(true);
+    app.sim_config.num_types = 4;
+    app.sim_config.world_size = glam::Vec2::new(800.0, 600.0);
+    app.particles = vec![
+        Particle::with_velocity(10.0, 20.0, 1.0, 2.0, 0),
+        Particle::with_velocity(30.0, 40.0, 3.0, 4.0, 1),
+    ];
+    app.sim_config.num_particles = 2;
+
+    let original = app.particles.clone();
+    app.set_particle_count_preserving_existing(5);
+
+    assert_eq!(app.particles.len(), 5);
+    assert_eq!(app.sim_config.num_particles, 5);
+    assert_eq!(app.particles[0].x, original[0].x);
+    assert_eq!(app.particles[0].y, original[0].y);
+    assert_eq!(app.particles[0].vx, original[0].vx);
+    assert_eq!(app.particles[1].particle_type, original[1].particle_type);
+    for particle in &app.particles[2..] {
+        assert!((0.0..=800.0).contains(&particle.x));
+        assert!((0.0..=600.0).contains(&particle.y));
+        assert!(particle.particle_type < 4);
+        assert_eq!(particle.vx, 0.0);
+        assert_eq!(particle.vy, 0.0);
+    }
+}
+
+#[test]
+fn set_particle_count_truncates_without_regenerating_prefix() {
+    let mut app = par_particle_life::app::App::new(true);
+    app.particles = vec![
+        Particle::with_velocity(10.0, 20.0, 1.0, 2.0, 0),
+        Particle::with_velocity(30.0, 40.0, 3.0, 4.0, 1),
+        Particle::with_velocity(50.0, 60.0, 5.0, 6.0, 2),
+    ];
+    app.sim_config.num_particles = 3;
+
+    app.set_particle_count_preserving_existing(2);
+
+    assert_eq!(app.particles.len(), 2);
+    assert_eq!(app.sim_config.num_particles, 2);
+    assert_eq!(app.particles[0].x, 10.0);
+    assert_eq!(app.particles[1].y, 40.0);
+    assert_eq!(app.particles[1].vy, 4.0);
+}
