@@ -110,6 +110,53 @@ impl AppHandler {
         }
     }
 
+    /// Change active particle count without resetting existing GPU particle state when possible.
+    pub(crate) fn hot_swap_particle_count(&mut self, target_count: u32) {
+        if target_count == self.app.sim_config.num_particles {
+            return;
+        }
+
+        let previous_count = self.app.sim_config.num_particles;
+        self.app.config.sim_num_particles = target_count;
+        self.app.rebalance_radii_for_density();
+
+        let gpu_has_capacity = self
+            .gpu
+            .as_ref()
+            .map(|gpu| gpu.buffers.has_capacity_for(target_count))
+            .unwrap_or(false);
+
+        if gpu_has_capacity {
+            self.app
+                .set_particle_count_preserving_existing(target_count);
+
+            if target_count > previous_count {
+                let start = previous_count as usize;
+                let appended = &self.app.particles[start..];
+                if let Some(gpu) = &self.gpu {
+                    gpu.buffers
+                        .write_particle_range(&gpu.context.queue, previous_count, appended);
+                }
+            }
+
+            if let Some(gpu) = &mut self.gpu {
+                gpu.buffers.set_num_particles(target_count);
+                gpu.buffers
+                    .update_params(&gpu.context.queue, &self.app.sim_config, 1.0 / 60.0);
+                gpu.spatial_buffers.update_params(
+                    &gpu.context.queue,
+                    &self.app.sim_config,
+                    self.app.radius_matrix.max_interaction_radius(),
+                );
+            }
+        } else {
+            self.sync_particles_from_gpu();
+            self.app
+                .set_particle_count_preserving_existing(target_count);
+            self.sync_buffers();
+        }
+    }
+
     /// Sync only the spatial hash buffers (when cell size changes).
     /// This is separate from sync_buffers to avoid unnecessary particle buffer recreation.
     pub(crate) fn sync_spatial_buffers(&mut self) {

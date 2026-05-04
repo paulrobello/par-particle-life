@@ -687,6 +687,43 @@ impl SimulationBuffers {
         }
     }
 
+    /// Write a contiguous particle range into both ping-pong buffers.
+    pub fn write_particle_range(&self, queue: &Queue, start_index: u32, particles: &[Particle]) {
+        if particles.is_empty() {
+            return;
+        }
+
+        let end_index = start_index + particles.len() as u32;
+        assert!(
+            end_index <= self.capacity_particles,
+            "particle range exceeds allocated GPU capacity"
+        );
+
+        let pos_type_data: Vec<ParticlePosType> =
+            particles.iter().map(ParticlePosType::from).collect();
+        let pos_type_bytes = bytemuck::cast_slice(&pos_type_data);
+        let pos_offset = Self::pos_type_byte_offset(start_index);
+        queue.write_buffer(&self.pos_type[0], pos_offset, pos_type_bytes);
+        queue.write_buffer(&self.pos_type[1], pos_offset, pos_type_bytes);
+
+        if self.use_f16 {
+            let vel_data: Vec<ParticleVelHalf> =
+                particles.iter().map(ParticleVelHalf::from).collect();
+            let vel_bytes = bytemuck::cast_slice(&vel_data);
+            let vel_offset = Self::velocity_byte_offset_f16(start_index);
+            queue.write_buffer(&self.velocities[0], vel_offset, vel_bytes);
+            queue.write_buffer(&self.velocities[1], vel_offset, vel_bytes);
+            queue.write_buffer(&self.velocity_scratch, vel_offset, vel_bytes);
+        } else {
+            let vel_data: Vec<ParticleVel> = particles.iter().map(ParticleVel::from).collect();
+            let vel_bytes = bytemuck::cast_slice(&vel_data);
+            let vel_offset = Self::velocity_byte_offset_f32(start_index);
+            queue.write_buffer(&self.velocities[0], vel_offset, vel_bytes);
+            queue.write_buffer(&self.velocities[1], vel_offset, vel_bytes);
+            queue.write_buffer(&self.velocity_scratch, vel_offset, vel_bytes);
+        }
+    }
+
     /// Swap the particle buffers after compute pass.
     pub fn swap_buffers(&mut self) {
         self.current_buffer = 1 - self.current_buffer;

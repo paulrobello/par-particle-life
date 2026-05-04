@@ -170,11 +170,7 @@ impl AppHandler {
                                 .response
                                 .on_hover_text("Total number of particles in the simulation");
                             if num_particles != self.app.sim_config.num_particles {
-                                self.app.sim_config.num_particles = num_particles;
-                                self.app.config.sim_num_particles = num_particles;
-                                self.app.rebalance_radii_for_density();
-                                self.app.regenerate_particles();
-                                self.sync_buffers();
+                                self.hot_swap_particle_count(num_particles);
                             }
 
                             let mut num_types = self.app.sim_config.num_types;
@@ -709,6 +705,7 @@ impl AppHandler {
                     self.ui_brush_tools_open = response.openness > 0.5;
 
                     // Obstacles
+                    if !self.app.obstacles.is_empty() {
                     let response = egui::CollapsingHeader::new("Obstacles")
                         .id_salt("obstacles_header")
                         .default_open(self.ui_obstacles_open)
@@ -792,6 +789,7 @@ impl AppHandler {
                     self.ui_obstacles_open = response.openness > 0.5;
                     if response.body_returned.unwrap_or(false) {
                         self.sync_obstacles();
+                    }
                     }
 
                     // Rendering settings
