@@ -1,68 +1,67 @@
 //! Brush tool operations for particle manipulation.
 
-use rand::RngExt;
-
 use super::AppHandler;
 use crate::app::BrushTool;
-use crate::simulation::{BoundaryMode, ObstacleShape, Particle};
+use crate::simulation::{BoundaryMode, ObstacleShape};
 
 impl AppHandler {
-    /// Draw particles at the brush position.
-    /// Adds new particles within the brush radius with random offset.
+    /// Draw particles at the brush position using a GPU compute shader.
     pub(crate) fn draw_particles(&mut self) {
-        // Sync with GPU first to get current positions
-        self.sync_particles_from_gpu();
+        let Some(gpu) = &mut self.gpu else { return };
 
-        let mut rng = rand::rng();
-        let num_types = self.app.sim_config.num_types;
-        let world_width = self.app.sim_config.world_size.x;
-        let world_height = self.app.sim_config.world_size.y;
-
-        // Determine how many particles to spawn this frame
-        let spawn_count = self.brush.draw_intensity as usize;
-
-        for _ in 0..spawn_count {
-            // Random position within brush radius
-            let angle = rng.random::<f32>() * std::f32::consts::TAU;
-            let radius = rng.random::<f32>().sqrt() * self.brush.radius;
-            let x = self.brush.position.x + angle.cos() * radius;
-            let y = self.brush.position.y + angle.sin() * radius;
-
-            // Determine particle type
-            let particle_type = if self.brush.draw_type < 0 {
-                // Random type
-                rng.random_range(0..num_types)
-            } else {
-                (self.brush.draw_type as u32).min(num_types - 1)
-            };
-
-            // Create new particle
-            let particle = Particle::new(x, y, particle_type);
-
-            // Add to particles list (will grow buffer on sync)
-            self.app.particles.push(particle);
+        let current_count = gpu.buffers.num_particles;
+        let capacity = gpu.buffers.capacity_particles;
+        if current_count >= capacity {
+            self.preset_status = format!("Particle capacity reached ({capacity})");
+            return;
         }
 
-        // Update particle count in sim config
-        self.app.sim_config.num_particles = self.app.particles.len() as u32;
+        let requested = self.brush.draw_intensity;
+        let spawn_count = requested.min(capacity - current_count);
+        if spawn_count == 0 {
+            return;
+        }
 
-        // Mark that buffers need syncing
-        self.needs_sync = true;
+        let params = crate::renderer::gpu::SpawnParamsUniform {
+            start_index: current_count,
+            spawn_count,
+            capacity_particles: capacity,
+            num_types: self.app.sim_config.num_types.max(1),
+            pos_x: self.brush.position.x,
+            pos_y: self.brush.position.y,
+            radius: self.brush.radius,
+            world_width: self.app.sim_config.world_size.x,
+            world_height: self.app.sim_config.world_size.y,
+            draw_type: self.brush.draw_type,
+            frame_counter: self.app.sim_config.frame_counter,
+            _padding: 0,
+        };
 
-        // Apply boundary wrapping to newly added particles
-        if self.app.sim_config.boundary_mode == BoundaryMode::Wrap
-            || self.app.sim_config.boundary_mode == BoundaryMode::MirrorWrap
-            || self.app.sim_config.boundary_mode == BoundaryMode::InfiniteWrap
+        gpu.brush_pipelines.update_spawn(&gpu.context.queue, params);
+        let spawn_bind_group = gpu
+            .brush_pipelines
+            .create_spawn_bind_group(&gpu.context.device, &gpu.buffers);
+
+        let mut encoder = gpu.context.create_encoder("Particle Spawn Encoder");
         {
-            // Calculate skip offset before borrowing
-            let skip_offset = self.app.particles.len() - spawn_count;
-
-            // Wrap particle positions
-            for particle in self.app.particles.iter_mut().skip(skip_offset) {
-                particle.x = particle.x.rem_euclid(world_width);
-                particle.y = particle.y.rem_euclid(world_height);
-            }
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("Particle Spawn Pass"),
+                timestamp_writes: None,
+            });
+            pass.set_pipeline(&gpu.brush_pipelines.spawn_pipeline);
+            pass.set_bind_group(0, &spawn_bind_group, &[]);
+            pass.dispatch_workgroups(spawn_count.div_ceil(256), 1, 1);
         }
+        gpu.context.submit(encoder.finish());
+
+        let new_count = current_count + spawn_count;
+        gpu.buffers.set_num_particles(new_count);
+        self.app.sim_config.num_particles = new_count;
+        self.app.config.sim_num_particles = new_count;
+        self.app
+            .particles
+            .resize(new_count as usize, crate::simulation::Particle::default());
+        self.app.physics.resize(new_count as usize);
     }
 
     /// Erase particles within the brush radius.
