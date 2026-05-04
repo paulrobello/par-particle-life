@@ -5,13 +5,14 @@ use winit::event_loop::{ControlFlow, EventLoop};
 
 use super::{AppConfig, handler::AppHandler};
 use crate::generators::{
-    colors::{Color, PaletteType, generate_colors},
+    colors::{Color, CustomPalette, PaletteType, generate_colors},
     custom::CustomGenerator,
     positions::{PositionPattern, SpawnConfig, generate_positions},
     rules::{RuleType, generate_rules},
 };
 use crate::simulation::{
-    InteractionMatrix, Obstacle, Particle, PhysicsEngine, RadiusMatrix, SimulationConfig,
+    InteractionMatrix, MatrixVariationConfig, Obstacle, Particle, PhysicsEngine, RadiusMatrix,
+    SimulationConfig,
 };
 
 /// Main application state.
@@ -24,6 +25,12 @@ pub struct App {
     pub particles: Vec<Particle>,
     /// Interaction matrix.
     pub interaction_matrix: InteractionMatrix,
+    /// Preserved base matrix used by time-varying matrix transforms.
+    pub matrix_variation_base: InteractionMatrix,
+    /// Time-varying interaction matrix settings.
+    pub matrix_variation: MatrixVariationConfig,
+    /// Elapsed variation time in seconds.
+    pub matrix_variation_time: f32,
     /// Radius matrices.
     pub radius_matrix: RadiusMatrix,
     /// Color palette for particle types.
@@ -48,6 +55,10 @@ pub struct App {
     pub obstacles: Vec<Obstacle>,
     /// User-defined custom rule generators.
     pub custom_generators: Vec<CustomGenerator>,
+    /// User-defined custom color palettes.
+    pub custom_palettes: Vec<CustomPalette>,
+    /// Active custom palette, if one is selected or being edited.
+    pub active_custom_palette: Option<CustomPalette>,
 }
 
 impl App {
@@ -81,6 +92,7 @@ impl App {
             temperature: config.phys_temperature,
             time_scale: config.phys_time_scale,
             velocity_coupling: config.phys_velocity_coupling,
+            integration_method: config.phys_integration_method,
             ..SimulationConfig::default()
         };
         // Enforce current max particle size limit
@@ -93,6 +105,14 @@ impl App {
         let current_pattern = config.gen_pattern;
 
         let interaction_matrix = generate_rules(current_rule, num_types);
+        let matrix_variation_base = interaction_matrix.clone();
+        let matrix_variation = MatrixVariationConfig {
+            enabled: config.gen_matrix_variation_enabled,
+            mode: config.gen_matrix_variation_mode,
+            amplitude: config.gen_matrix_variation_amplitude,
+            speed: config.gen_matrix_variation_speed,
+        };
+        let matrix_variation_time = 0.0;
         let mut radius_matrix = RadiusMatrix::default_for_size(num_types);
         let colors = generate_colors(current_palette, num_types);
 
@@ -124,12 +144,20 @@ impl App {
             log::warn!("Failed to load custom generators: {e}");
             Vec::new()
         });
+        let custom_palettes = CustomPalette::list().unwrap_or_else(|e| {
+            log::warn!("Failed to load custom palettes: {e}");
+            Vec::new()
+        });
+        let active_custom_palette = None;
 
         Self {
             config,
             sim_config,
             particles,
             interaction_matrix,
+            matrix_variation_base,
+            matrix_variation,
+            matrix_variation_time,
             radius_matrix,
             colors,
             physics,
@@ -142,6 +170,8 @@ impl App {
             type_sizes,
             obstacles,
             custom_generators,
+            custom_palettes,
+            active_custom_palette,
         }
     }
 
@@ -188,13 +218,50 @@ impl App {
 
     /// Regenerate the interaction matrix with the current rule type.
     pub fn regenerate_rules(&mut self) {
-        self.interaction_matrix =
+        self.matrix_variation_base =
             generate_rules(self.current_rule, self.sim_config.num_types as usize);
+        self.interaction_matrix = self
+            .matrix_variation
+            .apply(&self.matrix_variation_base, self.matrix_variation_time);
+    }
+
+    /// Capture the current matrix as the base for future time variation.
+    pub fn capture_matrix_variation_base(&mut self) {
+        self.matrix_variation_base = self.interaction_matrix.clone();
+        self.matrix_variation_time = 0.0;
+    }
+
+    /// Update time-varying matrix state. Returns true when the matrix changed.
+    pub fn update_matrix_variation(&mut self, dt: f32) -> bool {
+        if !self.matrix_variation.enabled {
+            return false;
+        }
+        self.matrix_variation_time += dt;
+        self.interaction_matrix = self
+            .matrix_variation
+            .apply(&self.matrix_variation_base, self.matrix_variation_time);
+        true
     }
 
     /// Regenerate the color palette.
     pub fn regenerate_colors(&mut self) {
-        self.colors = generate_colors(self.current_palette, self.sim_config.num_types as usize);
+        self.colors = if let Some(palette) = &self.active_custom_palette {
+            palette.colors_for_types(self.sim_config.num_types as usize)
+        } else {
+            generate_colors(self.current_palette, self.sim_config.num_types as usize)
+        };
+    }
+
+    /// Apply a user-defined color palette.
+    pub fn apply_custom_palette(&mut self, palette: CustomPalette) {
+        self.colors = palette.colors_for_types(self.sim_config.num_types as usize);
+        self.active_custom_palette = Some(palette);
+    }
+
+    /// Switch back to a built-in color palette.
+    pub fn clear_custom_palette(&mut self) {
+        self.active_custom_palette = None;
+        self.regenerate_colors();
     }
 
     /// Generate rules from a custom generator, with error handling.

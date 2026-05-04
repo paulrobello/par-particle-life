@@ -100,6 +100,15 @@ impl AppHandler {
             &gpu.buffers.params,
             &gpu.brush_pipelines.brush_buffer,
             &gpu.buffers.obstacles,
+            &gpu.buffers.velocity_scratch,
+        );
+
+        encoder.copy_buffer_to_buffer(
+            vel_in,
+            0,
+            &gpu.buffers.velocity_scratch,
+            0,
+            gpu.buffers.velocity_buffer_size(),
         );
 
         // Force computation pass
@@ -300,6 +309,15 @@ impl AppHandler {
             &gpu.buffers.params,
             &gpu.brush_pipelines.brush_buffer,
             &gpu.buffers.obstacles,
+            &gpu.buffers.velocity_scratch,
+        );
+
+        encoder.copy_buffer_to_buffer(
+            vel_out,
+            0,
+            &gpu.buffers.velocity_scratch,
+            0,
+            gpu.buffers.velocity_buffer_size(),
         );
 
         // Binned force computation
@@ -538,6 +556,7 @@ impl AppHandler {
             &gpu.buffers.params,
             &gpu.brush_pipelines.brush_buffer,
             &gpu.buffers.obstacles,
+            &gpu.buffers.velocity_scratch,
         );
 
         // Binned force computation

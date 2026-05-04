@@ -27,8 +27,8 @@ struct SimParams {
     temperature: f32,
     frame_counter: u32,
     num_obstacles: u32,
+    integration_method: u32,
     _padding2: u32,
-    _padding3: u32,
 }
 
 struct Camera {

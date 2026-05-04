@@ -28,8 +28,8 @@ struct SimParams {
     temperature: f32,
     frame_counter: u32,
     num_obstacles: u32,
+    integration_method: u32,
     _padding2: u32,
-    _padding3: u32,
 }
 
 @group(0) @binding(0) var<storage, read> pos_type_in: array<PosType>;
@@ -59,6 +59,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let is_wrap = params.boundary_mode != 0u;
 
     var total_force = vec2<f32>(0.0, 0.0);
+    var alignment_delta_sum = vec2<f32>(0.0, 0.0);
+    var alignment_weight_sum = 0.0;
 
     for (var j = 0u; j < params.num_particles; j = j + 1u) {
         if (j == i) {
@@ -125,8 +127,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
             let other_vel = vec2<f32>(vel_in[j]);
             let vel_delta = other_vel - my_vel;
             let t = (dist - min_r) / (max_r - min_r);
-            total_force = total_force + vel_delta * params.velocity_coupling * (1.0 - t);
+            let weight = 1.0 - t;
+            alignment_delta_sum = alignment_delta_sum + vel_delta * weight;
+            alignment_weight_sum = alignment_weight_sum + weight;
         }
+    }
+
+    if (alignment_weight_sum > 0.0) {
+        total_force = total_force + alignment_delta_sum / alignment_weight_sum * params.velocity_coupling;
     }
 
     // Apply wall repulsion for Repel mode (configurable strength 0-100)

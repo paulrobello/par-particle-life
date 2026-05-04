@@ -3,11 +3,13 @@
 use super::{AppHandler, RuleSelection};
 use crate::app::{BrushTool, Preset};
 use crate::generators::{
-    colors::{PaletteType, generate_colors},
+    colors::PaletteType,
     positions::PositionPattern,
     rules::{RuleType, generate_rules},
 };
-use crate::simulation::{BoundaryMode, ObstacleShape, RadiusMatrix};
+use crate::simulation::{
+    BoundaryMode, IntegrationMethod, MatrixVariationMode, ObstacleShape, RadiusMatrix,
+};
 use crate::video_recorder::VideoFormat;
 
 impl AppHandler {
@@ -87,10 +89,15 @@ impl AppHandler {
                             self.screenshot_requested = true;
                             log::info!("Screenshot requested via button");
                         }
+                        if ui.button("⛶ Fullscreen (F11)").clicked() {
+                            self.toggle_fullscreen();
+                        }
+                    });
+                    ui.horizontal(|ui| {
                         let record_label = if self.is_recording {
-                            "⏹ Stop Recording (F11)".to_string()
+                            "⏹ Stop Recording (F5)".to_string()
                         } else {
-                            format!("🔴 Record {} (F11)", self.video_format.name())
+                            format!("🔴 Record {} (F5)", self.video_format.name())
                         };
                         if ui.button(record_label).clicked() {
                             self.toggle_recording();
@@ -266,9 +273,31 @@ impl AppHandler {
                                     0.0..=1.0,
                                 )
                                 .text("Velocity Coupling"),
+                            )
+                            .on_hover_text(
+                                "Boid-like velocity alignment with nearby particles: 0 = none, 1 = strong flocking",
                             );
                             self.app.config.phys_velocity_coupling =
                                 self.app.sim_config.velocity_coupling;
+
+                            egui::ComboBox::from_label("Integration")
+                                .selected_text(self.app.sim_config.integration_method.display_name())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut self.app.sim_config.integration_method,
+                                        IntegrationMethod::Euler,
+                                        IntegrationMethod::Euler.display_name(),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.app.sim_config.integration_method,
+                                        IntegrationMethod::VelocityVerlet,
+                                        IntegrationMethod::VelocityVerlet.display_name(),
+                                    );
+                                })
+                                .response
+                                .on_hover_text("Velocity Verlet uses the average of old and updated velocity for smoother position updates");
+                            self.app.config.phys_integration_method =
+                                self.app.sim_config.integration_method;
 
                             // Boundary mode
                             let boundary_modes = [
@@ -419,6 +448,7 @@ impl AppHandler {
                                         match self.app.generate_custom_rules(*idx) {
                                             Ok(matrix) => {
                                                 self.app.interaction_matrix = matrix;
+                                                self.app.capture_matrix_variation_base();
                                                 self.sync_interaction_matrix();
                                                 self.preset_status.clear();
                                             }
@@ -434,6 +464,66 @@ impl AppHandler {
                                 self.app.regenerate_rules();
                                 self.sync_interaction_matrix();
                             }
+
+                            ui.collapsing("Time Variation", |ui| {
+                                let was_enabled = self.app.matrix_variation.enabled;
+                                if ui
+                                    .checkbox(&mut self.app.matrix_variation.enabled, "Animate matrix")
+                                    .on_hover_text("Continuously varies a preserved base interaction matrix")
+                                    .changed()
+                                {
+                                    self.app.config.gen_matrix_variation_enabled =
+                                        self.app.matrix_variation.enabled;
+                                    if self.app.matrix_variation.enabled && !was_enabled {
+                                        self.app.capture_matrix_variation_base();
+                                    }
+                                    if !self.app.matrix_variation.enabled {
+                                        self.app.interaction_matrix =
+                                            self.app.matrix_variation_base.clone();
+                                        self.sync_interaction_matrix();
+                                    }
+                                }
+
+                                let mut mode = self.app.matrix_variation.mode;
+                                egui::ComboBox::from_label("Mode")
+                                    .selected_text(mode.display_name())
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut mode,
+                                            MatrixVariationMode::Oscillate,
+                                            MatrixVariationMode::Oscillate.display_name(),
+                                        );
+                                        ui.selectable_value(
+                                            &mut mode,
+                                            MatrixVariationMode::Drift,
+                                            MatrixVariationMode::Drift.display_name(),
+                                        );
+                                    });
+                                if mode != self.app.matrix_variation.mode {
+                                    self.app.matrix_variation.mode = mode;
+                                    self.app.config.gen_matrix_variation_mode = mode;
+                                }
+
+                                ui.add(
+                                    egui::Slider::new(
+                                        &mut self.app.matrix_variation.amplitude,
+                                        0.0..=0.75,
+                                    )
+                                    .text("Amplitude"),
+                                );
+                                ui.add(
+                                    egui::Slider::new(&mut self.app.matrix_variation.speed, 0.01..=3.0)
+                                        .text("Speed"),
+                                );
+                                self.app.config.gen_matrix_variation_amplitude =
+                                    self.app.matrix_variation.amplitude;
+                                self.app.config.gen_matrix_variation_speed =
+                                    self.app.matrix_variation.speed;
+
+                                if ui.button("Use current matrix as base").clicked() {
+                                    self.app.capture_matrix_variation_base();
+                                }
+                            });
 
                             ui.horizontal(|ui| {
                                 if ui.button("Open Custom Generators").clicked()
@@ -460,22 +550,105 @@ impl AppHandler {
                             ui.separator();
 
                             // Palette type
-                            let palette_name = format!("{:?}", self.app.current_palette);
+                            let palette_name = self
+                                .app
+                                .active_custom_palette
+                                .as_ref()
+                                .map(|palette| format!("Custom: {}", palette.name))
+                                .unwrap_or_else(|| self.app.current_palette.display_name().to_string());
                             let mut new_palette = self.app.current_palette;
                             egui::ComboBox::from_label("Colors")
                                 .selected_text(&palette_name)
                                 .show_ui(ui, |ui| {
                                     for &palette in PaletteType::all() {
-                                        let name = format!("{:?}", palette);
-                                        ui.selectable_value(&mut new_palette, palette, name);
+                                        ui.selectable_value(
+                                            &mut new_palette,
+                                            palette,
+                                            palette.display_name(),
+                                        );
                                     }
                                 });
                             if new_palette != self.app.current_palette {
                                 self.app.current_palette = new_palette;
                                 self.app.config.gen_palette = new_palette;
-                                self.app.regenerate_colors();
+                                self.app.clear_custom_palette();
                                 self.sync_colors();
                             }
+                            if self.app.active_custom_palette.is_some()
+                                && ui.button("Use Built-in Palette").clicked()
+                            {
+                                self.app.clear_custom_palette();
+                                self.sync_colors();
+                            }
+
+                            ui.collapsing("Custom Palettes", |ui| {
+                                let mut changed = false;
+                                for i in 0..self.app.colors.len() {
+                                    ui.horizontal(|ui| {
+                                        ui.label(format!("Type {i}"));
+                                        let mut rgb = [
+                                            self.app.colors[i][0],
+                                            self.app.colors[i][1],
+                                            self.app.colors[i][2],
+                                        ];
+                                        if ui.color_edit_button_rgb(&mut rgb).changed() {
+                                            self.app.colors[i][0] = rgb[0];
+                                            self.app.colors[i][1] = rgb[1];
+                                            self.app.colors[i][2] = rgb[2];
+                                            self.app.colors[i][3] = 1.0;
+                                            changed = true;
+                                        }
+                                    });
+                                }
+                                if changed {
+                                    self.app.active_custom_palette = crate::generators::colors::CustomPalette::new(
+                                        "Unsaved Custom Palette",
+                                        self.app.colors.clone(),
+                                    )
+                                    .ok();
+                                    self.sync_colors();
+                                }
+
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.text_edit_singleline(&mut self.save_custom_palette_name);
+                                    if ui.button("Save Palette").clicked()
+                                        && !self.save_custom_palette_name.is_empty()
+                                    {
+                                        let name = self.save_custom_palette_name.clone();
+                                        self.save_custom_palette(&name);
+                                    }
+                                });
+
+                                ui.horizontal(|ui| {
+                                    let selected = if self.selected_custom_palette.is_empty() {
+                                        "Select palette..."
+                                    } else {
+                                        &self.selected_custom_palette
+                                    };
+                                    egui::ComboBox::from_id_salt("custom_palette_select")
+                                        .selected_text(selected)
+                                        .show_ui(ui, |ui| {
+                                            for palette in &self.app.custom_palettes.clone() {
+                                                ui.selectable_value(
+                                                    &mut self.selected_custom_palette,
+                                                    palette.name.clone(),
+                                                    &palette.name,
+                                                );
+                                            }
+                                        });
+
+                                    if ui.button("Load Palette").clicked()
+                                        && !self.selected_custom_palette.is_empty()
+                                    {
+                                        let name = self.selected_custom_palette.clone();
+                                        self.load_custom_palette(&name);
+                                    }
+                                    if ui.button("Reload").clicked() {
+                                        self.refresh_custom_palettes();
+                                    }
+                                });
+                            });
 
                             ui.separator();
 
@@ -506,10 +679,8 @@ impl AppHandler {
                                             self.app.current_rule,
                                             required as usize,
                                         );
-                                        self.app.colors = generate_colors(
-                                            self.app.current_palette,
-                                            required as usize,
-                                        );
+                                        self.app.capture_matrix_variation_base();
+                                        self.app.regenerate_colors();
                                     }
                                 }
 
@@ -652,6 +823,9 @@ impl AppHandler {
                             ui.label("R - Regenerate Particles");
                             ui.label("M - New Interaction Matrix");
                             ui.label("H - Toggle UI");
+                            ui.label("F5 - Start/Stop Recording");
+                            ui.label("F11 - Toggle Fullscreen");
+                            ui.label("F12 - Screenshot");
                             ui.label("Escape - Quit");
                         });
                     self.ui_keyboard_shortcuts_open = response.openness > 0.5;
@@ -1082,6 +1256,7 @@ impl AppHandler {
 
         // Load section
         ui.label("Load preset:");
+        ui.label("Tip: drag and drop any preset .json file onto the window to load it.");
         ui.horizontal(|ui| {
             let selected = if self.selected_preset.is_empty() {
                 "Select..."
@@ -1267,6 +1442,7 @@ impl AppHandler {
 
         // Update GPU buffers if matrix changed
         if matrix_changed {
+            self.app.capture_matrix_variation_base();
             self.sync_interaction_matrix();
         }
 

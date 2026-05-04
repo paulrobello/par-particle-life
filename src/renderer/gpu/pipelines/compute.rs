@@ -242,6 +242,17 @@ impl ComputePipelines {
                     },
                     count: None,
                 },
+                // old velocities before force integration (storage, read-only)
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -296,6 +307,7 @@ impl ComputePipelines {
     }
 
     /// Create advance compute bind group.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_advance_bind_group(
         &self,
         device: &Device,
@@ -304,6 +316,7 @@ impl ComputePipelines {
         params: &Buffer,
         brush_params: &Buffer,
         obstacles: &Buffer,
+        old_velocities: &Buffer,
     ) -> BindGroup {
         device.create_bind_group(&BindGroupDescriptor {
             label: Some("Advance Bind Group"),
@@ -328,6 +341,10 @@ impl ComputePipelines {
                 BindGroupEntry {
                     binding: 4,
                     resource: obstacles.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: old_velocities.as_entire_binding(),
                 },
             ],
         })

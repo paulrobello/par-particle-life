@@ -40,6 +40,11 @@ impl AppHandler {
         // Spatial hash is always enabled; enforce even if a preset/file had it off
         self.app.sim_config.use_spatial_hash = true;
 
+        if (self.app.running || self.step_requested) && self.app.update_matrix_variation(dt_capped)
+        {
+            self.sync_interaction_matrix();
+        }
+
         // Process brush tools (Draw/Erase modify particles)
         self.process_brush_tools();
 

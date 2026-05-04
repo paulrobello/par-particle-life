@@ -1,6 +1,6 @@
 //! Position generators for spawning particles.
 //!
-//! This module provides 27 different spawn patterns for particles,
+//! This module provides 31 different spawn patterns for particles,
 //! from simple random distributions to complex geometric arrangements.
 
 use rand::RngExt;
@@ -51,6 +51,9 @@ pub enum PositionPattern {
     LinkedClusters = 25,
     OrbitalBelts = 26,
     BraidedBelts = 27,
+    LinearGradient = 28,
+    RadialGradient = 29,
+    AngularGradient = 30,
 }
 
 impl PositionPattern {
@@ -86,6 +89,9 @@ impl PositionPattern {
             LinkedClusters,
             OrbitalBelts,
             BraidedBelts,
+            LinearGradient,
+            RadialGradient,
+            AngularGradient,
         ]
     }
 
@@ -120,6 +126,9 @@ impl PositionPattern {
             PositionPattern::LinkedClusters => "Linked Clusters",
             PositionPattern::OrbitalBelts => "Orbital Belts",
             PositionPattern::BraidedBelts => "Braided Belts",
+            PositionPattern::LinearGradient => "Linear Gradient",
+            PositionPattern::RadialGradient => "Radial Gradient",
+            PositionPattern::AngularGradient => "Angular Gradient",
         }
     }
 
@@ -148,6 +157,9 @@ impl PositionPattern {
             | PositionPattern::TwinSpirals
             | PositionPattern::SpiralArms
             | PositionPattern::PolarMaze => "Geometric",
+            PositionPattern::LinearGradient
+            | PositionPattern::RadialGradient
+            | PositionPattern::AngularGradient => "Gradient",
             _ => "Dynamic",
         }
     }
@@ -202,6 +214,9 @@ pub fn generate_positions(pattern: PositionPattern, config: &SpawnConfig) -> Vec
         PositionPattern::LinkedClusters => linked_clusters_generator(config),
         PositionPattern::OrbitalBelts => orbital_belts_generator(config),
         PositionPattern::BraidedBelts => braided_belts_generator(config),
+        PositionPattern::LinearGradient => linear_gradient_generator(config),
+        PositionPattern::RadialGradient => radial_gradient_generator(config),
+        PositionPattern::AngularGradient => angular_gradient_generator(config),
     }
 }
 
@@ -1116,6 +1131,61 @@ fn braided_belts_generator(config: &SpawnConfig) -> Vec<Particle> {
                 .clamp(0.0, config.height);
             particles.push(create_particle(x, y, t as u32));
         }
+    }
+
+    particles
+}
+
+fn linear_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
+    let mut rng = rand::rng();
+    let mut particles = Vec::with_capacity(config.num_particles);
+
+    for _ in 0..config.num_particles {
+        let x = rng.random::<f32>() * config.width;
+        let y = rng.random::<f32>() * config.height;
+        let t = ((x / config.width) * config.num_types as f32)
+            .floor()
+            .min((config.num_types - 1) as f32) as u32;
+        particles.push(create_particle(x, y, t));
+    }
+
+    particles
+}
+
+fn radial_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
+    let mut rng = rand::rng();
+    let mut particles = Vec::with_capacity(config.num_particles);
+    let cx = config.width * 0.5;
+    let cy = config.height * 0.5;
+    let max_radius = config.width.min(config.height) * 0.48;
+
+    for _ in 0..config.num_particles {
+        let th = rng.random::<f32>() * TAU;
+        let radius = max_radius * rng.random::<f32>().sqrt();
+        let x = cx + radius * th.cos();
+        let y = cy + radius * th.sin();
+        let t = ((radius / max_radius).min(0.999_999) * config.num_types as f32).floor() as u32;
+        particles.push(create_particle(x, y, t));
+    }
+
+    particles
+}
+
+fn angular_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
+    let mut rng = rand::rng();
+    let mut particles = Vec::with_capacity(config.num_particles);
+    let cx = config.width * 0.5;
+    let cy = config.height * 0.5;
+    let max_radius = config.width.min(config.height) * 0.48;
+
+    for _ in 0..config.num_particles {
+        let th = rng.random::<f32>() * TAU - PI;
+        let radius = max_radius * rng.random::<f32>().sqrt();
+        let x = cx + radius * th.cos();
+        let y = cy + radius * th.sin();
+        let normalized = (th + PI) / TAU;
+        let t = (normalized.min(0.999_999) * config.num_types as f32).floor() as u32;
+        particles.push(create_particle(x, y, t));
     }
 
     particles

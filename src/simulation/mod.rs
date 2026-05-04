@@ -2,6 +2,7 @@
 
 mod boundary;
 mod game_of_life;
+mod matrix_variation;
 mod obstacle;
 mod particle;
 mod physics;
@@ -9,6 +10,7 @@ mod spatial_hash;
 
 pub use boundary::BoundaryMode;
 pub use game_of_life::GameOfLife;
+pub use matrix_variation::{MatrixVariationConfig, MatrixVariationMode};
 pub use obstacle::{MAX_OBSTACLES, Obstacle, ObstacleData, ObstacleShape};
 pub use particle::{
     InteractionMatrix, Particle, ParticlePosType, ParticlePosTypeHalf, ParticleVel,
@@ -18,6 +20,26 @@ pub use physics::{PhysicsEngine, advance_particles, compute_forces_cpu};
 pub use spatial_hash::SpatialHash;
 
 use serde::{Deserialize, Serialize};
+
+/// Integration method used to advance particle positions and velocities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum IntegrationMethod {
+    /// Semi-implicit Euler integration: update velocity, then move by updated velocity.
+    #[default]
+    Euler,
+    /// Velocity Verlet position update: move by the average of previous and updated velocity.
+    VelocityVerlet,
+}
+
+impl IntegrationMethod {
+    /// Human-readable name for UI display.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Euler => "Euler",
+            Self::VelocityVerlet => "Velocity Verlet",
+        }
+    }
+}
 
 /// Configuration for the particle life simulation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +128,10 @@ pub struct SimulationConfig {
     /// Velocity coupling strength (0.0 - 1.0). When > 0, particles align velocities with neighbors.
     #[serde(default)]
     pub velocity_coupling: f32,
+
+    /// Numerical integration method for advancing particles.
+    #[serde(default)]
+    pub integration_method: IntegrationMethod,
 }
 
 /// Default value for max_bin_density (used by serde).
@@ -143,6 +169,7 @@ impl Default for SimulationConfig {
             frame_counter: 0,
             time_scale: 1.0,
             velocity_coupling: 0.0,
+            integration_method: IntegrationMethod::Euler,
         }
     }
 }

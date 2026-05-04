@@ -7,12 +7,36 @@ use winit::{
     dpi::LogicalSize,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
-    window::{WindowAttributes, WindowId},
+    window::{Fullscreen, WindowAttributes, WindowId},
 };
 
 use super::{AppHandler, RuleSelection};
 use crate::app::BrushTool;
 use crate::simulation::{MAX_OBSTACLES, Obstacle, ObstacleShape};
+
+impl AppHandler {
+    pub(crate) fn fullscreen_target(is_fullscreen: bool) -> Option<Fullscreen> {
+        if is_fullscreen {
+            None
+        } else {
+            Some(Fullscreen::Borderless(None))
+        }
+    }
+
+    pub(crate) fn toggle_fullscreen(&mut self) {
+        if let Some(gpu) = &self.gpu {
+            let is_fullscreen = gpu.context.window.fullscreen().is_some();
+            gpu.context
+                .window
+                .set_fullscreen(Self::fullscreen_target(is_fullscreen));
+            self.preset_status = if is_fullscreen {
+                "Exited fullscreen".to_string()
+            } else {
+                "Entered fullscreen".to_string()
+            };
+        }
+    }
+}
 
 impl ApplicationHandler for AppHandler {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -61,6 +85,11 @@ impl ApplicationHandler for AppHandler {
                 self.cursor_over_ui = self.show_ui && position.x as f32 <= self.ui_panel_right_edge;
             }
 
+            if let WindowEvent::DroppedFile(path) = &event {
+                self.load_dropped_preset(path);
+                return;
+            }
+
             if response.consumed && egui_wants_pointer {
                 if self.brush.tool == BrushTool::Obstacle && !self.cursor_over_ui {
                     // Fall through to obstacle handler
@@ -98,9 +127,15 @@ impl ApplicationHandler for AppHandler {
                 self.app.config.phys_boundary_mode = self.app.sim_config.boundary_mode;
                 self.app.config.phys_wall_repel_strength = self.app.sim_config.wall_repel_strength;
                 self.app.config.phys_mirror_wrap_count = self.app.sim_config.mirror_wrap_count;
+                self.app.config.phys_integration_method = self.app.sim_config.integration_method;
                 self.app.config.gen_rule = self.app.current_rule;
                 self.app.config.gen_palette = self.app.current_palette;
                 self.app.config.gen_pattern = self.app.current_pattern;
+                self.app.config.gen_matrix_variation_enabled = self.app.matrix_variation.enabled;
+                self.app.config.gen_matrix_variation_mode = self.app.matrix_variation.mode;
+                self.app.config.gen_matrix_variation_amplitude =
+                    self.app.matrix_variation.amplitude;
+                self.app.config.gen_matrix_variation_speed = self.app.matrix_variation.speed;
                 self.app.config.render_particle_size = self.app.sim_config.particle_size;
                 self.app.config.render_background_color = self.app.sim_config.background_color;
                 self.app.config.render_glow_enabled = self.app.sim_config.enable_glow;
@@ -154,6 +189,7 @@ impl ApplicationHandler for AppHandler {
                         RuleSelection::Custom(idx) => match self.app.generate_custom_rules(*idx) {
                             Ok(matrix) => {
                                 self.app.interaction_matrix = matrix;
+                                self.app.capture_matrix_variation_base();
                                 self.sync_interaction_matrix();
                                 self.preset_status.clear();
                             }
@@ -173,8 +209,11 @@ impl ApplicationHandler for AppHandler {
                         self.camera.reset();
                         self.update_camera();
                     }
-                    PhysicalKey::Code(KeyCode::F11) => {
+                    PhysicalKey::Code(KeyCode::F5) => {
                         self.toggle_recording();
+                    }
+                    PhysicalKey::Code(KeyCode::F11) => {
+                        self.toggle_fullscreen();
                     }
                     PhysicalKey::Code(KeyCode::F12) => {
                         self.screenshot_requested = true;
@@ -327,5 +366,20 @@ impl ApplicationHandler for AppHandler {
         if let Some(gpu) = &self.gpu {
             gpu.context.window.request_redraw();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppHandler;
+
+    #[test]
+    fn fullscreen_target_enters_borderless_when_windowed() {
+        assert!(AppHandler::fullscreen_target(false).is_some());
+    }
+
+    #[test]
+    fn fullscreen_target_exits_when_already_fullscreen() {
+        assert!(AppHandler::fullscreen_target(true).is_none());
     }
 }

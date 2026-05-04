@@ -5,10 +5,167 @@
 
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use std::f32::consts::PI;
+use std::{
+    f32::consts::PI,
+    path::{Path, PathBuf},
+};
 
 /// A color in RGBA format with f32 components [0.0, 1.0].
 pub type Color = [f32; 4];
+
+/// User-defined color palette persisted as JSON.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustomPalette {
+    /// Display name and stable load/save key.
+    pub name: String,
+    /// Anchor colors used to interpolate a palette for the active type count.
+    pub colors: Vec<Color>,
+}
+
+impl CustomPalette {
+    /// Create and validate a custom palette.
+    pub fn new(name: impl Into<String>, colors: Vec<Color>) -> Result<Self, String> {
+        let name = name.into().trim().to_string();
+        if name.is_empty() {
+            return Err("palette name cannot be empty".to_string());
+        }
+        if colors.is_empty() {
+            return Err("palette must contain at least one color".to_string());
+        }
+        for (idx, color) in colors.iter().enumerate() {
+            for component in color {
+                if !component.is_finite() || !(0.0..=1.0).contains(component) {
+                    return Err(format!(
+                        "palette color {idx} has invalid component {component}"
+                    ));
+                }
+            }
+        }
+        Ok(Self { name, colors })
+    }
+
+    /// Generate exactly `num_types` colors from the saved anchors.
+    pub fn colors_for_types(&self, num_types: usize) -> Vec<Color> {
+        if num_types == 0 {
+            return Vec::new();
+        }
+        if self.colors.len() == 1 || num_types == 1 {
+            return vec![self.colors[0]; num_types];
+        }
+
+        let max_anchor = self.colors.len() - 1;
+        (0..num_types)
+            .map(|i| {
+                let pos = i as f32 / (num_types - 1) as f32 * max_anchor as f32;
+                let lo = pos.floor() as usize;
+                let hi = (lo + 1).min(max_anchor);
+                let t = pos - lo as f32;
+                let a = self.colors[lo];
+                let b = self.colors[hi];
+                [
+                    lerp(a[0], b[0], t),
+                    lerp(a[1], b[1], t),
+                    lerp(a[2], b[2], t),
+                    lerp(a[3], b[3], t),
+                ]
+            })
+            .collect()
+    }
+
+    /// Default custom palette directory under the app presets directory.
+    pub fn custom_palettes_dir() -> PathBuf {
+        if let Some(data_dir) = dirs::data_dir() {
+            data_dir
+                .join("par-particle-life")
+                .join("presets")
+                .join("palettes")
+        } else {
+            PathBuf::from("presets").join("palettes")
+        }
+    }
+
+    /// Ensure the custom palette directory exists.
+    pub fn ensure_custom_palettes_dir() -> anyhow::Result<PathBuf> {
+        let dir = Self::custom_palettes_dir();
+        if !dir.exists() {
+            std::fs::create_dir_all(&dir)?;
+        }
+        Ok(dir)
+    }
+
+    /// Save this palette into a directory as JSON.
+    pub fn save_to_dir(&self, dir: impl AsRef<Path>) -> anyhow::Result<()> {
+        let dir = dir.as_ref();
+        std::fs::create_dir_all(dir)?;
+        let path = dir.join(format!("{}.json", safe_palette_file_stem(&self.name)));
+        if path.exists()
+            && let Ok(existing_json) = std::fs::read_to_string(&path)
+            && let Ok(existing_palette) = serde_json::from_str::<Self>(&existing_json)
+            && existing_palette.name != self.name
+        {
+            anyhow::bail!(
+                "palette name '{}' collides with existing palette '{}'",
+                self.name,
+                existing_palette.name
+            );
+        }
+        let json = serde_json::to_string_pretty(self)?;
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    /// Load a named palette from a directory.
+    pub fn load_from_dir(dir: impl AsRef<Path>, name: &str) -> anyhow::Result<Self> {
+        let path = dir
+            .as_ref()
+            .join(format!("{}.json", safe_palette_file_stem(name)));
+        let json = std::fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&json)?)
+    }
+
+    /// List palette names in a directory.
+    pub fn list_in_dir(dir: impl AsRef<Path>) -> anyhow::Result<Vec<String>> {
+        let dir = dir.as_ref();
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut names = Vec::new();
+        for entry in std::fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.extension().is_some_and(|ext| ext == "json")
+                && let Ok(json) = std::fs::read_to_string(&path)
+                && let Ok(palette) = serde_json::from_str::<Self>(&json)
+            {
+                names.push(palette.name);
+            }
+        }
+        names.sort();
+        Ok(names)
+    }
+
+    /// List all saved custom palettes from the default directory.
+    pub fn list() -> anyhow::Result<Vec<Self>> {
+        let dir = Self::custom_palettes_dir();
+        let names = Self::list_in_dir(&dir)?;
+        names
+            .iter()
+            .map(|name| Self::load_from_dir(&dir, name))
+            .collect()
+    }
+}
+
+fn safe_palette_file_stem(name: &str) -> String {
+    name.chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
 
 /// Types of color palettes available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

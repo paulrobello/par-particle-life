@@ -235,9 +235,12 @@ impl AppHandler {
         // Reset simulation parameters
         let num_types = self.app.sim_config.num_types as usize;
         self.app.interaction_matrix = generate_rules(RuleType::Random, num_types);
+        self.app.capture_matrix_variation_base();
+        self.app.matrix_variation = Default::default();
         self.app.radius_matrix = RadiusMatrix::default_for_size(num_types);
         self.app.current_rule = RuleType::Random;
         self.app.current_palette = PaletteType::Rainbow;
+        self.app.active_custom_palette = None;
         self.app.colors = generate_colors(PaletteType::Rainbow, num_types);
         self.app.current_pattern = PositionPattern::Disk;
         self.app.type_masses = vec![1.0; num_types];

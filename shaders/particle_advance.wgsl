@@ -27,8 +27,8 @@ struct SimParams {
     temperature: f32,
     frame_counter: u32,
     num_obstacles: u32,
+    integration_method: u32,
     _padding2: u32,
-    _padding3: u32,
 }
 
 struct BrushParams {
@@ -80,6 +80,7 @@ struct ObstacleData {
 }
 
 @group(0) @binding(4) var<storage, read> obstacles: array<ObstacleData>;
+@group(0) @binding(5) var<storage, read> old_vel: array<vec2<VEL_FLOAT>>;
 
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
@@ -91,6 +92,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     var particle_pos_data = pos[i];
     var particle_pos = vec2<f32>(f32(particle_pos_data.x), f32(particle_pos_data.y));
     var particle_vel = vec2<f32>(vel[i]);
+    let previous_vel = vec2<f32>(old_vel[i]);
     let width = params.world_width;
     let height = params.world_height;
 
@@ -161,8 +163,14 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     }
 
     // Update position
-    particle_pos.x = particle_pos.x + particle_vel.x * params.dt;
-    particle_pos.y = particle_pos.y + particle_vel.y * params.dt;
+    if (params.integration_method == 1u) {
+        let average_vel = (previous_vel + particle_vel) * 0.5;
+        particle_pos.x = particle_pos.x + average_vel.x * params.dt;
+        particle_pos.y = particle_pos.y + average_vel.y * params.dt;
+    } else {
+        particle_pos.x = particle_pos.x + particle_vel.x * params.dt;
+        particle_pos.y = particle_pos.y + particle_vel.y * params.dt;
+    }
 
     // Handle obstacle collisions
     for (var obs_idx = 0u; obs_idx < params.num_obstacles; obs_idx = obs_idx + 1u) {

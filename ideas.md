@@ -2,28 +2,10 @@
 
 Remove completed items from this list and update CHANGELOG.md
 
-## Simulation & Physics
-
-### Multi-Step Integration Methods
-Add Verlet / RK4 integration as an alternative to the current Euler method. Higher-order integration would allow larger time steps with the same stability, enabling more complex emergent behaviors at higher force factors.
-
-### Time-Varying Interaction Matrices
-Allow the interaction matrix to evolve over time — slow drift, periodic oscillation, or response to global metrics (e.g., entropy, clustering). Could produce dynamic ecosystems that shift between behaviors rather than settling into a single steady state.
-
----
-
 ## Generators
 
 ### Gallery of Curated Presets
 Build a curated collection of "best of" presets with descriptive names (e.g., "Predator-Prey Swarm", "Crystalline Lattice", "Spiral Galaxy"). The current preset system is bare — adding a gallery with thumbnails would make the app more approachable.
-
-### Gradient Position Generators
-Add position generators where particle types are placed along a gradient (linear, radial, angular) rather than randomly or in discrete clusters. Useful for studying front propagation and mixing dynamics.
-
-### Save/Load Custom Palettes
-Allow users to create and save custom color palettes (pick N colors) rather than only using the 37 built-in generators. Store them in the presets directory.
-
----
 
 ## UI & Interaction
 
@@ -38,12 +20,6 @@ Add a small minimap in the corner showing the full simulation extent when zoomed
 
 ### Particle Count Heatmap Overlay
 Render a real-time density heatmap overlay showing where particles cluster. Useful for understanding emergent structure that isn't visible at the individual particle level.
-
-### Drag-and-Drop Preset Loading
-Allow dragging a preset JSON file onto the window to load it. Faster than navigating to the presets folder.
-
-### Fullscreen Mode
-Add a fullscreen toggle (F11 currently records — could use F5 or a button). Useful for presentations and immersive viewing.
 
 ### Onboarding Tutorial
 Add a first-run tutorial overlay that highlights key UI sections and demonstrates the basic workflow: pick rules → adjust matrix → use brush tools.
@@ -86,12 +62,6 @@ Move the Draw brush tool's particle spawning to a compute shader instead of CPU-
 
 ### WebAssembly Build
 The WASM dependencies are already in `Cargo.toml` but not integrated. Publishing as a web app would dramatically increase reach. Would need web-specific input handling and file system alternatives.
-
-### Android / iOS Build
-wgpu supports mobile targets. A touch-optimized UI with pinch-zoom and tap-brush would make the simulation accessible on tablets.
-
-### Automatic CI on Push
-The CI workflow (`ci.yml`) is currently manual-only (`workflow_dispatch`). Add `on: push` to `main` and `on: pull_request` so tests and lints run automatically, catching regressions early.
 
 ---
 

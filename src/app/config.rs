@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::generators::{colors::PaletteType, positions::PositionPattern, rules::RuleType};
-use crate::simulation::{BoundaryMode, SimulationConfig};
+use crate::simulation::{BoundaryMode, IntegrationMethod, MatrixVariationMode, SimulationConfig};
 
 /// Application-level configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +75,18 @@ pub struct AppConfig {
     /// Generators: current spawn pattern.
     #[serde(default = "default_gen_pattern")]
     pub gen_pattern: PositionPattern,
+    /// Generators: time-varying interaction matrices enabled.
+    #[serde(default)]
+    pub gen_matrix_variation_enabled: bool,
+    /// Generators: time-varying interaction matrix mode.
+    #[serde(default)]
+    pub gen_matrix_variation_mode: MatrixVariationMode,
+    /// Generators: time-varying interaction matrix amplitude.
+    #[serde(default = "default_gen_matrix_variation_amplitude")]
+    pub gen_matrix_variation_amplitude: f32,
+    /// Generators: time-varying interaction matrix speed.
+    #[serde(default = "default_gen_matrix_variation_speed")]
+    pub gen_matrix_variation_speed: f32,
 
     /// Rendering: particle size.
     #[serde(default = "default_particle_size")]
@@ -113,6 +125,59 @@ pub struct AppConfig {
     /// Physics: velocity coupling for boid-like alignment.
     #[serde(default)]
     pub phys_velocity_coupling: f32,
+
+    /// Physics: integration method.
+    #[serde(default)]
+    pub phys_integration_method: IntegrationMethod,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_integration_method_deserializes_to_euler() {
+        let json = r#"{
+            "title": "test",
+            "window_width": 800,
+            "window_height": 600,
+            "target_fps": 60,
+            "vsync": true,
+            "ui_simulation_open": true,
+            "ui_physics_open": true,
+            "ui_generators_open": true,
+            "ui_interaction_matrix_open": false,
+            "ui_brush_tools_open": true,
+            "ui_rendering_open": false,
+            "ui_presets_open": false,
+            "ui_keyboard_shortcuts_open": false,
+            "ui_obstacles_open": false,
+            "phys_force_factor": 1.0,
+            "phys_friction": 0.3,
+            "phys_repel_strength": 3.0,
+            "phys_max_velocity": 500.0,
+            "phys_boundary_mode": "Wrap",
+            "phys_wall_repel_strength": 100.0,
+            "phys_mirror_wrap_count": 5,
+            "sim_num_particles": 1000,
+            "sim_num_types": 7,
+            "gen_rule": "Random",
+            "gen_palette": "Rainbow",
+            "gen_pattern": "Disk",
+            "render_particle_size": 0.5,
+            "render_background_color": [0.0, 0.0, 0.0],
+            "render_glow_enabled": true,
+            "render_glow_intensity": 0.35,
+            "render_glow_size": 4.0,
+            "render_glow_steepness": 2.0,
+            "render_spatial_hash_cell_size": 64.0,
+            "auto_scale_radii": true
+        }"#;
+
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.phys_integration_method, IntegrationMethod::Euler);
+    }
 }
 
 impl Default for AppConfig {
@@ -151,6 +216,10 @@ impl Default for AppConfig {
             gen_rule: default_gen_rule(),
             gen_palette: default_gen_palette(),
             gen_pattern: default_gen_pattern(),
+            gen_matrix_variation_enabled: false,
+            gen_matrix_variation_mode: MatrixVariationMode::Oscillate,
+            gen_matrix_variation_amplitude: default_gen_matrix_variation_amplitude(),
+            gen_matrix_variation_speed: default_gen_matrix_variation_speed(),
 
             // Rendering defaults (mirror SimulationConfig::default)
             render_particle_size: default_particle_size(),
@@ -172,6 +241,9 @@ impl Default for AppConfig {
 
             // Velocity coupling
             phys_velocity_coupling: 0.0,
+
+            // Integration method
+            phys_integration_method: IntegrationMethod::Euler,
         }
     }
 }
@@ -194,6 +266,14 @@ fn default_gen_palette() -> PaletteType {
 
 fn default_gen_pattern() -> PositionPattern {
     PositionPattern::Disk
+}
+
+fn default_gen_matrix_variation_amplitude() -> f32 {
+    0.15
+}
+
+fn default_gen_matrix_variation_speed() -> f32 {
+    0.35
 }
 
 fn default_particle_size() -> f32 {

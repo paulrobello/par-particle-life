@@ -28,8 +28,8 @@ struct SimParams {
     temperature: f32,
     frame_counter: u32,
     num_obstacles: u32,
+    integration_method: u32,
     _padding2: u32,
-    _padding3: u32,
 }
 
 struct SpatialParams {
@@ -82,6 +82,8 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let grid_h = i32(spatial.grid_height);
 
     var total_force = vec2<f32>(0.0, 0.0);
+    var alignment_delta_sum = vec2<f32>(0.0, 0.0);
+    var alignment_weight_sum = 0.0;
     var total_particles_in_neighborhood = 0u;
     var neighbors_checked = 0u;
     let budget = params.neighbor_budget;
@@ -198,10 +200,16 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
                     let other_vel = vec2<f32>(velocities[j]);
                     let vel_delta = other_vel - my_vel;
                     let t = (dist - min_r) / (max_r - min_r);
-                    total_force = total_force + vel_delta * params.velocity_coupling * (1.0 - t);
+                    let weight = 1.0 - t;
+                    alignment_delta_sum = alignment_delta_sum + vel_delta * weight;
+                    alignment_weight_sum = alignment_weight_sum + weight;
                 }
             }
         }
+    }
+
+    if (alignment_weight_sum > 0.0) {
+        total_force = total_force + alignment_delta_sum / alignment_weight_sum * params.velocity_coupling;
     }
 
     // Apply wall repulsion for Repel mode (configurable strength 0-100)

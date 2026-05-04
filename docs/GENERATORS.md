@@ -19,7 +19,7 @@ graph TB
     subgraph Generators["Generator System"]
         Rules[Rule Generators<br/>31 types]
         Colors[Color Palettes<br/>37 types]
-        Positions[Position Patterns<br/>28 types]
+        Positions[Position Patterns<br/>31 types]
     end
 
     subgraph Output["Generated Data"]
@@ -244,7 +244,7 @@ let first_color = colors[0];
 
 Position patterns determine where particles spawn initially.
 
-### Available Patterns (28)
+### Available Patterns (31)
 
 #### Default
 
@@ -271,6 +271,14 @@ Position patterns determine where particles spawn initially.
 | **Rainbow Rings** | Each ring is one type |
 | **Rainbow Spiral** | Type changes along spiral |
 | **Rainbow Line** | Line segments by type |
+
+#### Gradient
+
+| Name | Description |
+|------|-------------|
+| **Linear Gradient** | Type assigned from horizontal position |
+| **Radial Gradient** | Type assigned from distance to center |
+| **Angular Gradient** | Type assigned from angle around center |
 
 #### Geometric
 
@@ -332,6 +340,12 @@ graph TB
         Flower[Flower]
     end
 
+    subgraph Gradient["Gradient"]
+        Linear[Linear Gradient]
+        Radial[Radial Gradient]
+        Angular[Angular Gradient]
+    end
+
     subgraph Dynamic["Dynamic"]
         Clusters[Soft Clusters]
         Orbital[Orbital Belts]
@@ -342,6 +356,7 @@ graph TB
     style Classic fill:#1b5e20,stroke:#4caf50,stroke-width:2px,color:#ffffff
     style Chromatic fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
     style Geometric fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
+    style Gradient fill:#004d40,stroke:#26a69a,stroke-width:2px,color:#ffffff
     style Dynamic fill:#880e4f,stroke:#c2185b,stroke-width:2px,color:#ffffff
 ```
 

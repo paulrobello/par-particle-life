@@ -72,6 +72,8 @@ Type 2  [ -0.7     0.6     0.1  ]
 
 Values range from -1.0 (strong repulsion) to 1.0 (strong attraction).
 
+Time-varying interaction matrices can animate from a preserved base matrix using `Oscillate` or `Drift` modes. The UI exposes enable, mode, amplitude, speed, and "Use current matrix as base" controls; presets store both the dynamic settings and base matrix.
+
 ### Radius Configuration
 
 Each type pair has min/max radius values:

@@ -5,7 +5,7 @@ use rand::RngExt;
 use rayon::prelude::*;
 
 use super::{
-    SimulationConfig,
+    IntegrationMethod, SimulationConfig,
     boundary::{BoundaryMode, apply_boundary, wrapped_delta},
     particle::{InteractionMatrix, Particle, RadiusMatrix},
     spatial_hash::SpatialHash,
@@ -105,6 +105,8 @@ pub fn compute_forces_cpu(
         .enumerate()
         .map(|(i, p)| {
             let mut force = Vec2::ZERO;
+            let mut alignment_delta_sum = Vec2::ZERO;
+            let mut alignment_weight_sum = 0.0;
             let p_pos = p.position();
             let p_type = p.particle_type as usize;
 
@@ -150,8 +152,14 @@ pub fn compute_forces_cpu(
                 if config.velocity_coupling > 0.0 && dist >= min_r {
                     let vel_delta = Vec2::new(q.vx - p.vx, q.vy - p.vy);
                     let t = (dist - min_r) / (max_r - min_r);
-                    force += vel_delta * config.velocity_coupling * (1.0 - t);
+                    let weight = 1.0 - t;
+                    alignment_delta_sum += vel_delta * weight;
+                    alignment_weight_sum += weight;
                 }
+            }
+
+            if alignment_weight_sum > 0.0 {
+                force += alignment_delta_sum / alignment_weight_sum * config.velocity_coupling;
             }
 
             force / config.force_factor / type_masses[p_type]
@@ -176,6 +184,8 @@ fn compute_forces_spatial(
 
     forces.par_iter_mut().enumerate().for_each(|(i, force)| {
         *force = Vec2::ZERO;
+        let mut alignment_delta_sum = Vec2::ZERO;
+        let mut alignment_weight_sum = 0.0;
 
         let p = &particles[i];
         let p_pos = p.position();
@@ -224,8 +234,14 @@ fn compute_forces_spatial(
             if config.velocity_coupling > 0.0 && dist >= min_r {
                 let vel_delta = Vec2::new(q.vx - p.vx, q.vy - p.vy);
                 let t = (dist - min_r) / (max_r - min_r);
-                *force += vel_delta * config.velocity_coupling * (1.0 - t);
+                let weight = 1.0 - t;
+                alignment_delta_sum += vel_delta * weight;
+                alignment_weight_sum += weight;
             }
+        }
+
+        if alignment_weight_sum > 0.0 {
+            *force += alignment_delta_sum / alignment_weight_sum * config.velocity_coupling;
         }
 
         *force /= config.force_factor / type_masses[p_type];
@@ -262,7 +278,9 @@ pub fn advance_particles(
                 p.vy += (rng.random::<f32>() - 0.5) * config.temperature;
             }
 
-            // Apply force (Euler integration)
+            let previous_velocity = Vec2::new(p.vx, p.vy);
+
+            // Apply force
             p.vx += force.x * dt;
             p.vy += force.y * dt;
 
@@ -275,8 +293,17 @@ pub fn advance_particles(
             }
 
             // Update position
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
+            match config.integration_method {
+                IntegrationMethod::Euler => {
+                    p.x += p.vx * dt;
+                    p.y += p.vy * dt;
+                }
+                IntegrationMethod::VelocityVerlet => {
+                    let average_velocity = (previous_velocity + Vec2::new(p.vx, p.vy)) * 0.5;
+                    p.x += average_velocity.x * dt;
+                    p.y += average_velocity.y * dt;
+                }
+            }
 
             // Handle boundaries
             apply_boundary(p, config);
@@ -322,6 +349,39 @@ mod tests {
 
         // Particle 1 should be pushed right (away from particle 0 which is to the left)
         assert!(forces[1].x > 0.0);
+    }
+
+    #[test]
+    fn velocity_coupling_uses_neighbor_average_not_neighbor_sum() {
+        let mut particles = Vec::new();
+        particles.push(Particle::with_velocity(50.0, 50.0, 100.0, 0.0, 0));
+        for i in 0..100 {
+            particles.push(Particle::with_velocity(
+                60.0 + i as f32 * 0.1,
+                50.0,
+                0.0,
+                0.0,
+                0,
+            ));
+        }
+
+        let matrix = InteractionMatrix::new(1);
+        let radii = RadiusMatrix::new(1, 1.0, 1_000.0);
+        let config = SimulationConfig {
+            force_factor: 1.0,
+            velocity_coupling: 0.001,
+            world_size: glam::Vec2::new(2_000.0, 2_000.0),
+            ..Default::default()
+        };
+        let type_masses = vec![1.0];
+
+        let forces = compute_forces_cpu(&particles, &matrix, &radii, &type_masses, &config);
+
+        assert!(
+            forces[0].x.abs() <= 0.11,
+            "tiny velocity coupling should be bounded by the average neighbor velocity delta, got {}",
+            forces[0].x
+        );
     }
 
     #[test]
@@ -371,5 +431,23 @@ mod tests {
         advance_particles(&mut particles, &forces, &config, 1.0);
 
         assert!(particles[0].speed() <= 10.0 + 0.001);
+    }
+
+    #[test]
+    fn velocity_verlet_uses_average_velocity_for_position_update() {
+        let mut particles = vec![Particle::with_velocity(50.0, 50.0, 0.0, 0.0, 0)];
+        let forces = vec![Vec2::new(2.0, 0.0)];
+        let config = SimulationConfig {
+            friction: 0.0,
+            max_velocity: 100.0,
+            integration_method: IntegrationMethod::VelocityVerlet,
+            world_size: glam::Vec2::new(200.0, 200.0),
+            ..Default::default()
+        };
+
+        advance_particles(&mut particles, &forces, &config, 1.0);
+
+        assert!((particles[0].x - 51.0).abs() < 0.001);
+        assert!((particles[0].vx - 2.0).abs() < 0.001);
     }
 }

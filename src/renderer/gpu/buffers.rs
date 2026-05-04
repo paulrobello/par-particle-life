@@ -326,8 +326,10 @@ pub struct SimParamsUniform {
     pub frame_counter: u32,
     /// Number of obstacles.
     pub num_obstacles: u32,
+    /// Integration method (0=Euler, 1=Velocity Verlet).
+    pub integration_method: u32,
     /// Remaining padding.
-    _padding2: [u32; 2],
+    _padding2: u32,
 }
 
 impl SimParamsUniform {
@@ -359,7 +361,11 @@ impl SimParamsUniform {
             temperature: config.temperature,
             frame_counter: config.frame_counter,
             num_obstacles: 0,
-            _padding2: [0; 2],
+            integration_method: match config.integration_method {
+                crate::simulation::IntegrationMethod::Euler => 0,
+                crate::simulation::IntegrationMethod::VelocityVerlet => 1,
+            },
+            _padding2: 0,
         }
     }
 }
@@ -374,6 +380,8 @@ pub struct SimulationBuffers {
     pub pos_type: [Buffer; 2],
     /// Velocity buffers (double-buffered).
     pub velocities: [Buffer; 2],
+    /// Scratch copy of pre-force velocities for second-order position integration.
+    pub velocity_scratch: Buffer,
     /// Current buffer index (0 or 1) - the "read" buffer for rendering.
     pub current_buffer: usize,
     /// Interaction matrix buffer.
@@ -448,35 +456,47 @@ impl SimulationBuffers {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
         });
 
-        let (vel_buffer_0, vel_buffer_1) = if use_f16 {
+        let (vel_buffer_0, vel_buffer_1, velocity_scratch) = if use_f16 {
             let vel_data: Vec<ParticleVelHalf> =
                 particles.iter().map(ParticleVelHalf::from).collect();
+            let vel_bytes = bytemuck::cast_slice(&vel_data);
 
             let v0 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Particle Velocity Buffer 0 (F16)"),
-                contents: bytemuck::cast_slice(&vel_data),
+                contents: vel_bytes,
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             });
             let v1 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Particle Velocity Buffer 1 (F16)"),
-                contents: bytemuck::cast_slice(&vel_data),
+                contents: vel_bytes,
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             });
-            (v0, v1)
+            let scratch = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Particle Velocity Scratch Buffer (F16)"),
+                contents: vel_bytes,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+            });
+            (v0, v1, scratch)
         } else {
             let vel_data: Vec<ParticleVel> = particles.iter().map(ParticleVel::from).collect();
+            let vel_bytes = bytemuck::cast_slice(&vel_data);
 
             let v0 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Particle Velocity Buffer 0"),
-                contents: bytemuck::cast_slice(&vel_data),
+                contents: vel_bytes,
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             });
             let v1 = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("Particle Velocity Buffer 1"),
-                contents: bytemuck::cast_slice(&vel_data),
+                contents: vel_bytes,
                 usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
             });
-            (v0, v1)
+            let scratch = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Particle Velocity Scratch Buffer"),
+                contents: vel_bytes,
+                usage: BufferUsages::STORAGE | BufferUsages::COPY_DST | BufferUsages::COPY_SRC,
+            });
+            (v0, v1, scratch)
         };
 
         // Create interaction matrix buffer
@@ -541,6 +561,7 @@ impl SimulationBuffers {
         Self {
             pos_type: [pt0, pt1],
             velocities: [vel_buffer_0, vel_buffer_1],
+            velocity_scratch,
             current_buffer: 0,
             interaction_matrix: interaction_buffer,
             min_radius: min_radius_buffer,
@@ -577,6 +598,16 @@ impl SimulationBuffers {
         &self.velocities[1 - self.current_buffer]
     }
 
+    /// Byte size of one velocity buffer.
+    pub fn velocity_buffer_size(&self) -> u64 {
+        let num = self.num_particles as u64;
+        if self.use_f16 {
+            num * std::mem::size_of::<ParticleVelHalf>() as u64
+        } else {
+            num * std::mem::size_of::<ParticleVel>() as u64
+        }
+    }
+
     /// Swap the particle buffers after compute pass.
     pub fn swap_buffers(&mut self) {
         self.current_buffer = 1 - self.current_buffer;
@@ -597,11 +628,13 @@ impl SimulationBuffers {
             let vel_bytes = bytemuck::cast_slice(&vel_data);
             queue.write_buffer(&self.velocities[0], 0, vel_bytes);
             queue.write_buffer(&self.velocities[1], 0, vel_bytes);
+            queue.write_buffer(&self.velocity_scratch, 0, vel_bytes);
         } else {
             let vel_data: Vec<ParticleVel> = particles.iter().map(ParticleVel::from).collect();
             let vel_bytes = bytemuck::cast_slice(&vel_data);
             queue.write_buffer(&self.velocities[0], 0, vel_bytes);
             queue.write_buffer(&self.velocities[1], 0, vel_bytes);
+            queue.write_buffer(&self.velocity_scratch, 0, vel_bytes);
         }
     }
 

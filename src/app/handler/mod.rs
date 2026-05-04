@@ -76,6 +76,10 @@ pub(crate) struct AppHandler {
     pub(crate) save_preset_name: String,
     /// Status message for preset operations.
     pub(crate) preset_status: String,
+    /// Currently selected custom palette name for loading.
+    pub(crate) selected_custom_palette: String,
+    /// Name for saving custom palettes.
+    pub(crate) save_custom_palette_name: String,
     /// Last captured file path (screenshot or video) for "Open" button.
     pub(crate) last_capture_path: Option<String>,
     /// Screenshot requested flag.
@@ -230,6 +234,8 @@ impl AppHandler {
             selected_preset: String::new(),
             save_preset_name: String::from("my_preset"),
             preset_status: String::new(),
+            selected_custom_palette: String::new(),
+            save_custom_palette_name: String::from("my_palette"),
             last_capture_path: None,
             screenshot_requested: false,
             screenshot_counter: 0,

@@ -347,7 +347,7 @@ impl AppHandler {
                             log::error!("Failed to add frame to video: {}", e);
                         } else {
                             self.preset_status = format!(
-                                "Recording: {} frames (F11 to stop)",
+                                "Recording: {} frames (F5 to stop)",
                                 recorder.frame_count()
                             );
                         }
@@ -357,7 +357,7 @@ impl AppHandler {
                         if self.recorded_frames.len() < MAX_FRAMES {
                             self.recorded_frames.push(image);
                             self.preset_status = format!(
-                                "Recording: {} frames (F11 to stop)",
+                                "Recording: {} frames (F5 to stop)",
                                 self.recorded_frames.len()
                             );
                         } else {

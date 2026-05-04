@@ -58,7 +58,7 @@ impl AppHandler {
                     self.video_frame_counter = 0;
                     let format_name = self.video_format.name();
                     log::info!("Started {} recording: {}", format_name, filepath_str);
-                    self.preset_status = format!("Recording {}... (F11 to stop)", format_name);
+                    self.preset_status = format!("Recording {}... (F5 to stop)", format_name);
                     return;
                 }
                 Err(e) => {
@@ -73,7 +73,7 @@ impl AppHandler {
         self.video_frame_counter = 0;
         self.is_recording = true;
         log::info!("Started native GIF recording");
-        self.preset_status = "Recording GIF... (F11 to stop)".to_string();
+        self.preset_status = "Recording GIF... (F5 to stop)".to_string();
     }
 
     /// Stop video recording and save the file.

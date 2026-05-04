@@ -5,8 +5,14 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::generators::{colors::PaletteType, positions::PositionPattern, rules::RuleType};
-use crate::simulation::{InteractionMatrix, Obstacle, RadiusMatrix, SimulationConfig};
+use crate::generators::{
+    colors::{CustomPalette, PaletteType},
+    positions::PositionPattern,
+    rules::RuleType,
+};
+use crate::simulation::{
+    InteractionMatrix, MatrixVariationConfig, Obstacle, RadiusMatrix, SimulationConfig,
+};
 
 /// A saved simulation preset containing all configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,12 +23,24 @@ pub struct Preset {
     pub sim_config: SimulationConfig,
     /// Interaction matrix.
     pub interaction_matrix: InteractionMatrix,
+    /// Base interaction matrix for time-varying transforms.
+    #[serde(default)]
+    pub matrix_variation_base: Option<InteractionMatrix>,
+    /// Time-varying interaction matrix settings.
+    #[serde(default)]
+    pub matrix_variation: MatrixVariationConfig,
+    /// Elapsed matrix variation time in seconds.
+    #[serde(default)]
+    pub matrix_variation_time: f32,
     /// Radius matrices.
     pub radius_matrix: RadiusMatrix,
     /// Rule type used to generate the matrix.
     pub rule_type: RuleType,
     /// Color palette type.
     pub palette_type: PaletteType,
+    /// Saved custom palette, if one was active.
+    #[serde(default)]
+    pub custom_palette: Option<CustomPalette>,
     /// Position pattern.
     pub position_pattern: PositionPattern,
     /// Per-type mass values.
@@ -44,6 +62,25 @@ fn default_type_sizes() -> Vec<f32> {
     vec![1.0; 7]
 }
 
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::Preset;
+
+    #[test]
+    fn preset_file_detection_accepts_json_files_case_insensitively() {
+        assert!(Preset::is_preset_file(Path::new("example.json")));
+        assert!(Preset::is_preset_file(Path::new("example.JSON")));
+    }
+
+    #[test]
+    fn preset_file_detection_rejects_non_json_files_and_directories() {
+        assert!(!Preset::is_preset_file(Path::new("example.txt")));
+        assert!(!Preset::is_preset_file(Path::new("example")));
+    }
+}
+
 impl Preset {
     /// Create a new preset from the current simulation state.
     #[allow(clippy::too_many_arguments)]
@@ -52,8 +89,12 @@ impl Preset {
         sim_config: &SimulationConfig,
         interaction_matrix: &InteractionMatrix,
         radius_matrix: &RadiusMatrix,
+        matrix_variation_base: &InteractionMatrix,
+        matrix_variation: MatrixVariationConfig,
+        matrix_variation_time: f32,
         rule_type: RuleType,
         palette_type: PaletteType,
+        custom_palette: Option<CustomPalette>,
         position_pattern: PositionPattern,
         type_masses: &[f32],
         type_sizes: &[f32],
@@ -63,14 +104,26 @@ impl Preset {
             name: name.into(),
             sim_config: sim_config.clone(),
             interaction_matrix: interaction_matrix.clone(),
+            matrix_variation_base: Some(matrix_variation_base.clone()),
+            matrix_variation,
+            matrix_variation_time,
             radius_matrix: radius_matrix.clone(),
             rule_type,
             palette_type,
+            custom_palette,
             position_pattern,
             type_masses: type_masses.to_vec(),
             type_sizes: type_sizes.to_vec(),
             obstacles: obstacles.to_vec(),
         }
+    }
+
+    /// Return true when the path looks like a preset JSON file.
+    pub fn is_preset_file(path: impl AsRef<Path>) -> bool {
+        path.as_ref()
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
     }
 
     /// Save the preset to a JSON file.
@@ -125,7 +178,7 @@ impl Preset {
         {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map(|e| e == "json").unwrap_or(false)
+            if Self::is_preset_file(&path)
                 && let Some(name) = path.file_stem()
             {
                 presets.push(name.to_string_lossy().into_owned());
