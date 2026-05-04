@@ -198,6 +198,36 @@ impl BrushParamsUniform {
     }
 }
 
+/// Parameters for GPU-driven particle spawning.
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+pub struct SpawnParamsUniform {
+    /// First particle index to write.
+    pub start_index: u32,
+    /// Number of particles to spawn this dispatch.
+    pub spawn_count: u32,
+    /// Allocated particle capacity.
+    pub capacity_particles: u32,
+    /// Number of particle types.
+    pub num_types: u32,
+    /// Brush position X in world coordinates.
+    pub pos_x: f32,
+    /// Brush position Y in world coordinates.
+    pub pos_y: f32,
+    /// Brush radius in world coordinates.
+    pub radius: f32,
+    /// World width.
+    pub world_width: f32,
+    /// World height.
+    pub world_height: f32,
+    /// Draw type, or -1 for random.
+    pub draw_type: i32,
+    /// Frame counter for deterministic GPU random seeds.
+    pub frame_counter: u32,
+    /// Padding for 16-byte alignment.
+    pub _padding: u32,
+}
+
 /// Uniform buffer for brush circle rendering parameters.
 ///
 /// WGSL memory layout: vec3<f32> has 16-byte alignment, so the struct

@@ -14,7 +14,9 @@ use wgpu::{
 };
 
 use super::load_shader;
-use crate::renderer::gpu::{BrushParamsUniform, BrushRenderUniform};
+use crate::renderer::gpu::{
+    BrushParamsUniform, BrushRenderUniform, SimulationBuffers, SpawnParamsUniform,
+};
 
 /// Compute and render pipelines for brush interaction.
 pub struct BrushPipelines {
@@ -32,6 +34,12 @@ pub struct BrushPipelines {
     pub render_buffer: Buffer,
     /// Bind group for brush circle rendering.
     pub circle_bind_group: BindGroup,
+    /// Compute pipeline for GPU-driven particle spawning.
+    pub spawn_pipeline: ComputePipeline,
+    /// Bind group layout for GPU-driven particle spawning.
+    pub spawn_bind_group_layout: BindGroupLayout,
+    /// Spawn parameters uniform buffer.
+    pub spawn_buffer: Buffer,
 }
 
 impl BrushPipelines {
@@ -226,6 +234,105 @@ impl BrushPipelines {
             }],
         });
 
+        // ===== Particle Spawn Pipeline =====
+
+        let spawn_shader = load_shader(
+            device,
+            "Particle Spawn Shader",
+            include_str!("../../../../shaders/particle_spawn.wgsl"),
+        );
+
+        let spawn_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("Particle Spawn Bind Group Layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let spawn_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("Particle Spawn Pipeline Layout"),
+            bind_group_layouts: &[Some(&spawn_bind_group_layout)],
+            immediate_size: 0,
+        });
+
+        let spawn_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("Particle Spawn Pipeline"),
+            layout: Some(&spawn_pipeline_layout),
+            module: &spawn_shader,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None,
+        });
+
+        let default_spawn = SpawnParamsUniform {
+            start_index: 0,
+            spawn_count: 0,
+            capacity_particles: 0,
+            num_types: 1,
+            pos_x: 0.0,
+            pos_y: 0.0,
+            radius: 100.0,
+            world_width: 1000.0,
+            world_height: 1000.0,
+            draw_type: -1,
+            frame_counter: 0,
+            _padding: 0,
+        };
+        let spawn_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Particle Spawn Params Buffer"),
+            contents: bytemuck::bytes_of(&default_spawn),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
         Self {
             force_pipeline,
             force_bind_group_layout,
@@ -234,6 +341,9 @@ impl BrushPipelines {
             circle_bind_group_layout,
             render_buffer,
             circle_bind_group,
+            spawn_pipeline,
+            spawn_bind_group_layout,
+            spawn_buffer,
         }
     }
 
@@ -291,5 +401,44 @@ impl BrushPipelines {
             camera_offset_y,
         );
         queue.write_buffer(&self.render_buffer, 0, bytemuck::bytes_of(&params));
+    }
+
+    /// Create bind group for GPU-driven particle spawning into both ping-pong buffers.
+    pub fn create_spawn_bind_group(
+        &self,
+        device: &Device,
+        buffers: &SimulationBuffers,
+    ) -> BindGroup {
+        device.create_bind_group(&BindGroupDescriptor {
+            label: Some("Particle Spawn Bind Group"),
+            layout: &self.spawn_bind_group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: buffers.current_pos_type().as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: buffers.current_velocities().as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: buffers.next_pos_type().as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: buffers.next_velocities().as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: self.spawn_buffer.as_entire_binding(),
+                },
+            ],
+        })
+    }
+
+    /// Update GPU spawn parameters.
+    pub fn update_spawn(&self, queue: &Queue, params: SpawnParamsUniform) {
+        queue.write_buffer(&self.spawn_buffer, 0, bytemuck::bytes_of(&params));
     }
 }
