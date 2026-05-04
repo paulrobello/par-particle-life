@@ -90,8 +90,8 @@ impl ApplicationHandler for AppHandler {
             }
 
             if response.consumed && egui_wants_pointer {
-                if self.brush.tool == BrushTool::Obstacle && !self.cursor_over_ui {
-                    // Fall through to obstacle handler
+                if self.brush.tool != BrushTool::None && !self.cursor_over_ui {
+                    // Fall through to brush handlers when cursor is in simulation area
                 } else {
                     if let WindowEvent::CursorMoved { position, .. } = &event {
                         self.camera.last_mouse_pos =
