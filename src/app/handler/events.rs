@@ -73,10 +73,9 @@ impl ApplicationHandler for AppHandler {
         event: WindowEvent,
     ) {
         // Let egui handle events first
-        let mut egui_wants_pointer = false;
         if let Some(gpu) = &mut self.gpu {
             let response = gpu.egui_state.on_window_event(&gpu.context.window, &event);
-            egui_wants_pointer = gpu.egui_ctx.egui_wants_pointer_input();
+            let egui_wants_pointer = gpu.egui_ctx.egui_wants_pointer_input();
 
             // Track whether the cursor is over the egui UI panel (updated on move)
             // Use screen X position vs stored panel right edge — egui_wants_pointer
@@ -229,7 +228,7 @@ impl ApplicationHandler for AppHandler {
                 use winit::event::{ElementState, MouseButton};
                 // Middle mouse button or right button for panning (only when not over UI)
                 if button == MouseButton::Middle || button == MouseButton::Right {
-                    if state == ElementState::Pressed && !egui_wants_pointer {
+                    if state == ElementState::Pressed && !self.cursor_over_ui {
                         self.camera.is_panning = true;
                     } else if state == ElementState::Released {
                         self.camera.is_panning = false;
@@ -240,7 +239,7 @@ impl ApplicationHandler for AppHandler {
                     && self.brush.tool != BrushTool::None
                     && self.brush.tool != BrushTool::Obstacle
                 {
-                    if state == ElementState::Pressed && !egui_wants_pointer {
+                    if state == ElementState::Pressed && !self.cursor_over_ui {
                         self.brush.is_active = true;
                     } else if state == ElementState::Released {
                         self.brush.is_active = false;
