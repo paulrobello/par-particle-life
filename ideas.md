@@ -15,9 +15,6 @@ Replace the current scroll-wheel NxN grid with a proper heatmap editor: click-dr
 ### Undo/Redo for Rule Changes
 Track interaction matrix edits so users can undo/redo changes. The matrix editor is the primary creative tool — accidental scroll-wheel changes are currently irreversible.
 
-### Minimap / Overview
-Add a small minimap in the corner showing the full simulation extent when zoomed in. With the 0.1x–10x zoom range, users can lose spatial context.
-
 ### Particle Count Heatmap Overlay
 Render a real-time density heatmap overlay showing where particles cluster. Useful for understanding emergent structure that isn't visible at the individual particle level.
 
@@ -44,17 +41,18 @@ Export the current frame as an SVG with circles for particles. Useful for print 
 
 ## Performance & GPU
 
-### Async Compute Queue
-Run spatial hash computation on a dedicated compute queue while rendering the previous frame on the graphics queue. Currently compute and render are serialized, leaving GPU headroom unused.
+Ranked by expected practical performance ROI in the current architecture.
+
+| Rank | Idea | Complexity | Possible performance benefit | Notes |
+| --- | --- | --- | --- | --- |
+| 1 | Adaptive Workgroup Size | Medium | Low–Medium; GPU/scene dependent | Workgroup size is hardcoded to 256 in Rust dispatch and WGSL shaders. Benefit requires profiling and likely multiple shader/pipeline variants or overridable constants. |
+| 2 | Async Compute Queue | Very High | Uncertain / Low until proven by profiling | Compute and render currently use one wgpu queue and render freshly computed buffers in the same frame. True overlap would require multi-frame buffering/scheduling redesign, and wgpu/backend queue support may limit gains. |
 
 ### Adaptive Workgroup Size
 Dynamically adjust workgroup sizes based on GPU capabilities (detected via wgpu adapter limits). Currently hardcoded to 256.
 
-### Particle Count Hot-Swap
-Allow changing particle count without full simulation reset — spawn new particles at random positions or remove from lowest-density regions. Currently changing count requires a full reset.
-
-### GPU-Driven Particle Spawning
-Move the Draw brush tool's particle spawning to a compute shader instead of CPU-side buffer manipulation. Currently, brush drawing locks CPU-GPU sync.
+### Async Compute Queue
+Run spatial hash computation on a dedicated compute queue while rendering the previous frame on the graphics queue. Currently compute and render are serialized, leaving GPU headroom unused.
 
 ---
 
