@@ -874,7 +874,7 @@ impl AppHandler {
                 } else {
                     egui::Color32::from_rgba_unmultiplied(255, 100, 100, 120)
                 };
-                let stroke_width = if is_selected { 3.0 } else { 2.0 };
+                let stroke_width: f32 = if is_selected { 3.0 } else { 2.0 };
 
                 match obs.shape {
                     ObstacleShape::Circle => {
@@ -927,7 +927,7 @@ impl AppHandler {
                         painter.circle_stroke(
                             center,
                             preview_r,
-                            egui::Stroke::new(2.0, preview_stroke),
+                            egui::Stroke::new(2.0_f32, preview_stroke),
                         );
                     }
                     ObstacleShape::Rectangle => {
@@ -939,7 +939,7 @@ impl AppHandler {
                         painter.rect_stroke(
                             rect,
                             2.0,
-                            egui::Stroke::new(2.0, preview_stroke),
+                            egui::Stroke::new(2.0_f32, preview_stroke),
                             egui::StrokeKind::Outside,
                         );
                     }
@@ -1401,7 +1401,7 @@ impl AppHandler {
                     painter.rect_stroke(
                         cell_rect,
                         2.0,
-                        egui::Stroke::new(2.0, egui::Color32::WHITE),
+                        egui::Stroke::new(2.0_f32, egui::Color32::WHITE),
                         egui::StrokeKind::Outside,
                     );
 
