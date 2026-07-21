@@ -75,10 +75,9 @@ impl SpatialParamsUniform {
 
     /// Get total number of bins.
     pub fn total_bins(&self) -> u32 {
-        // Checked multiply first; fall back to saturated product on overflow.
+        // Saturate on overflow, then cap at the budget the GPU buffer can hold.
         self.grid_width
-            .checked_mul(self.grid_height)
-            .unwrap_or(u32::MAX)
+            .saturating_mul(self.grid_height)
             .min(MAX_TOTAL_BINS)
     }
 }
@@ -445,6 +444,28 @@ impl SimParamsUniform {
 
 /// Manages GPU buffers for the particle simulation.
 ///
+/// Borrowed view of the per-particle and per-type simulation state.
+///
+/// Bundles what [`SimulationBuffers::new`] needs to read from the live `App`
+/// (particles + interaction/radius matrices + per-type colors, masses, sizes)
+/// into one argument so the constructor stays under clippy's
+/// `too_many_arguments` threshold. Callers usually build it inline from
+/// adjacent `App` fields.
+pub struct ParticleView<'a> {
+    /// Initial particle data.
+    pub particles: &'a [Particle],
+    /// Interaction coefficients between types.
+    pub interaction_matrix: &'a InteractionMatrix,
+    /// Min/max radius matrices.
+    pub radius_matrix: &'a RadiusMatrix,
+    /// RGBA colors for each particle type.
+    pub colors: &'a [[f32; 4]],
+    /// Per-type mass values.
+    pub type_masses: &'a [f32],
+    /// Per-type size multipliers.
+    pub type_sizes: &'a [f32],
+}
+
 /// Uses double-buffering (ping-pong) for particles to enable
 /// GPU compute without race conditions.
 /// Now uses SoA (Structure of Arrays) layout: Position+Type in one buffer, Velocity in another.
@@ -536,22 +557,17 @@ impl SimulationBuffers {
     ///
     /// # Arguments
     /// * `device` - The wgpu device
-    /// * `particles` - Initial particle data
-    /// * `interaction_matrix` - Interaction matrix between types
-    /// * `radius_matrix` - Min/max radius matrices
-    /// * `colors` - RGBA colors for each particle type
+    /// * `view` - Borrowed per-particle and per-type state (see [`ParticleView`])
     /// * `config` - Simulation configuration
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        device: &Device,
-        particles: &[Particle],
-        interaction_matrix: &InteractionMatrix,
-        radius_matrix: &RadiusMatrix,
-        colors: &[[f32; 4]],
-        type_masses: &[f32],
-        type_sizes: &[f32],
-        config: &SimulationConfig,
-    ) -> Self {
+    /// * `view` - Borrowed per-particle and per-type state (see [`ParticleView`])
+    /// * `config` - Simulation configuration
+    pub fn new(device: &Device, view: &ParticleView<'_>, config: &SimulationConfig) -> Self {
+        let particles = view.particles;
+        let interaction_matrix = view.interaction_matrix;
+        let radius_matrix = view.radius_matrix;
+        let colors = view.colors;
+        let type_masses = view.type_masses;
+        let type_sizes = view.type_sizes;
         let num_particles = particles.len() as u32;
         let capacity_particles = Self::capacity_for_particle_count(num_particles);
         let num_types = config.num_types;
@@ -869,10 +885,14 @@ impl SimulationBuffers {
     /// `obstacles` is non-empty, but `num_obstacles` is always updated so
     /// the SimParams uniform reflects the actual count visible to shaders.
     pub fn update_obstacles(&mut self, queue: &Queue, obstacles: &[ObstacleData]) {
-        let len = obstacles.len().min(MAX_OBSTACLES as usize) as u32;
+        let len = obstacles.len().min(MAX_OBSTACLES) as u32;
         self.num_obstacles = len;
         if !obstacles.is_empty() {
-            queue.write_buffer(&self.obstacles, 0, bytemuck::cast_slice(&obstacles[..len as usize]));
+            queue.write_buffer(
+                &self.obstacles,
+                0,
+                bytemuck::cast_slice(&obstacles[..len as usize]),
+            );
         }
     }
 
@@ -1355,8 +1375,14 @@ mod tests {
         assert_eq!(core::mem::offset_of!(BrushRenderUniform, world_width), 32);
         assert_eq!(core::mem::offset_of!(BrushRenderUniform, world_height), 36);
         assert_eq!(core::mem::offset_of!(BrushRenderUniform, camera_zoom), 40);
-        assert_eq!(core::mem::offset_of!(BrushRenderUniform, camera_offset_x), 44);
-        assert_eq!(core::mem::offset_of!(BrushRenderUniform, camera_offset_y), 48);
+        assert_eq!(
+            core::mem::offset_of!(BrushRenderUniform, camera_offset_x),
+            44
+        );
+        assert_eq!(
+            core::mem::offset_of!(BrushRenderUniform, camera_offset_y),
+            48
+        );
         // _padding1 lives in the 12-byte gap WGSL inserts before `vec3<f32>`
         // (vec3 has 16-byte alignment, so it jumps from offset 52 to 64).
         assert_eq!(core::mem::offset_of!(BrushRenderUniform, _padding1), 52);
@@ -1377,10 +1403,12 @@ mod tests {
     /// allocation (ARC-025, paired with SEC-005 on the CPU side).
     #[test]
     fn spatial_params_uniform_clamps_total_bins_under_hostile_cell_size() {
-        let mut config = SimulationConfig::default();
         // Force a tiny cell size and huge world so the raw product overflows.
-        config.world_size = glam::Vec2::new(1.0e7, 1.0e7);
-        config.spatial_hash_cell_size = 0.001;
+        let config = SimulationConfig {
+            world_size: glam::Vec2::new(1.0e7, 1.0e7),
+            spatial_hash_cell_size: 0.001,
+            ..Default::default()
+        };
 
         let params = SpatialParamsUniform::from_config(&config, 0.0);
 

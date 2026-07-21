@@ -307,17 +307,20 @@ impl ComputePipelines {
     }
 
     /// Create advance compute bind group.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// `pos_vel` packs the position+velocity buffers the advance step reads
+    /// and writes (bindings 0 and 1); the remaining arguments are read-only
+    /// auxiliary inputs at bindings 2-5.
     pub fn create_advance_bind_group(
         &self,
         device: &Device,
-        pos: &Buffer,
-        vel: &Buffer,
+        pos_vel: [&Buffer; 2],
         params: &Buffer,
         brush_params: &Buffer,
         obstacles: &Buffer,
         old_velocities: &Buffer,
     ) -> BindGroup {
+        let (pos, vel) = (&pos_vel[0], &pos_vel[1]);
         device.create_bind_group(&BindGroupDescriptor {
             label: Some("Advance Bind Group"),
             layout: &self.advance_bind_group_layout,

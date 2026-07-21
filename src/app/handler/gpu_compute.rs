@@ -36,23 +36,16 @@ impl AppHandler {
         // Run compute passes on the shared encoder (no individual submits).
         // Compute reads from current_particles(), writes to next_particles().
         // Brush force is now integrated into the advance shader.
-        if self.app.sim_config.use_spatial_hash {
-            // Spatial hash optimized path - uses separate submissions for barrier correctness.
-            // The spatial hash requires transitioning buffers between atomic and non-atomic access,
-            // which needs explicit barriers via separate encoder submissions.
-            let max_radius = self.app.radius_matrix.max_interaction_radius();
-            Self::run_gpu_compute_spatial_with_barriers(
-                gpu,
-                &self.app.sim_config,
-                workgroup_count,
-                max_radius,
-            );
-        } else {
-            // Brute force O(n²) path - single encoder, no blocking wait
-            let mut encoder = gpu.context.create_encoder("GPU Compute Encoder");
-            Self::run_gpu_compute_brute_force_on_encoder(&mut encoder, gpu, workgroup_count);
-            gpu.context.submit(encoder.finish());
-        }
+        // Spatial hash optimized path - uses separate submissions for barrier correctness.
+        // The spatial hash requires transitioning buffers between atomic and non-atomic access,
+        // which needs explicit barriers via separate encoder submissions.
+        let max_radius = self.app.radius_matrix.max_interaction_radius();
+        Self::run_gpu_compute_spatial_with_barriers(
+            gpu,
+            &self.app.sim_config,
+            workgroup_count,
+            max_radius,
+        );
 
         // Create render bind groups pointing to next_particles() (the OUTPUT of compute).
         // Compute read from current, wrote to next - so render needs to use next.
@@ -69,70 +62,6 @@ impl AppHandler {
 
         // Swap so next frame's compute reads from what we just rendered (the computed output)
         gpu.buffers.swap_buffers();
-    }
-
-    /// Run GPU compute using brute force O(n²) algorithm on a shared encoder.
-    /// Reads from current_particles, writes to next_particles.
-    fn run_gpu_compute_brute_force_on_encoder(
-        encoder: &mut wgpu::CommandEncoder,
-        gpu: &mut GpuState,
-        workgroup_count: u32,
-    ) {
-        // Read from current (input), write to next (output)
-        let pos_in = gpu.buffers.current_pos_type();
-        let vel_in = gpu.buffers.current_velocities();
-        let pos_out = gpu.buffers.next_pos_type();
-        let vel_out = gpu.buffers.next_velocities();
-
-        // Create bind groups for compute passes
-        let force_bind_group = gpu.compute.create_force_bind_group(
-            &gpu.context.device,
-            pos_in,  // Read positions
-            vel_in,  // Read velocities (accumulate forces)
-            vel_out, // Write new velocities
-            &gpu.buffers,
-        );
-
-        let advance_bind_group = gpu.compute.create_advance_bind_group(
-            &gpu.context.device,
-            pos_out, // Write new positions
-            vel_out, // Read/Write velocities
-            &gpu.buffers.params,
-            &gpu.brush_pipelines.brush_buffer,
-            &gpu.buffers.obstacles,
-            &gpu.buffers.velocity_scratch,
-        );
-
-        encoder.copy_buffer_to_buffer(
-            vel_in,
-            0,
-            &gpu.buffers.velocity_scratch,
-            0,
-            gpu.buffers.velocity_buffer_size(),
-        );
-
-        // Force computation pass
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Force Compute Pass"),
-                timestamp_writes: None,
-            });
-            compute_pass.set_pipeline(&gpu.compute.force_pipeline);
-            compute_pass.set_bind_group(0, &force_bind_group, &[]);
-            compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
-        }
-
-        // Advance pass (integrate velocities, apply boundaries)
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Advance Pass"),
-                timestamp_writes: None,
-            });
-            compute_pass.set_pipeline(&gpu.compute.advance_pipeline);
-            compute_pass.set_bind_group(0, &advance_bind_group, &[]);
-            compute_pass.dispatch_workgroups(workgroup_count, 1, 1);
-        }
-        // No submit - encoder will be submitted by caller
     }
 
     /// Run GPU compute using spatial hashing - optimized single-encoder version.
@@ -298,8 +227,7 @@ impl AppHandler {
 
         let advance_bind_group = gpu.compute.create_advance_bind_group(
             &gpu.context.device,
-            pos_out, // In-place update
-            vel_out, // In-place update (after force pass wrote to it)
+            [pos_out, vel_out], // In-place update; vel from force pass
             &gpu.buffers.params,
             &gpu.brush_pipelines.brush_buffer,
             &gpu.buffers.obstacles,

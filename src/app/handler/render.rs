@@ -2,6 +2,36 @@
 
 use super::AppHandler;
 use crate::simulation::BoundaryMode;
+use wgpu::{LoadOp, Operations, RenderPass};
+
+/// Begin a colour-only render pass against `view` with the given load op.
+///
+/// The simulation's render passes share this descriptor shape — they differ
+/// only in label and whether they clear or load. Folding the boilerplate
+/// here keeps the call sites focused on what each pass actually draws.
+fn color_pass<'a>(
+    encoder: &'a mut wgpu::CommandEncoder,
+    view: &'a wgpu::TextureView,
+    label: &'a str,
+    load: LoadOp<wgpu::Color>,
+) -> RenderPass<'a> {
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            resolve_target: None,
+            ops: Operations {
+                load,
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    })
+}
 
 impl AppHandler {
     pub(crate) fn render(&mut self) {
@@ -72,27 +102,17 @@ impl AppHandler {
         // Clear background
         {
             let bg = self.app.sim_config.background_color;
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Clear Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: bg[0] as f64,
-                            g: bg[1] as f64,
-                            b: bg[2] as f64,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let _render_pass = color_pass(
+                &mut encoder,
+                &view,
+                "Clear Pass",
+                LoadOp::Clear(wgpu::Color {
+                    r: bg[0] as f64,
+                    g: bg[1] as f64,
+                    b: bg[2] as f64,
+                    a: 1.0,
+                }),
+            );
             // Pass ends here, just clears the background
         }
 
@@ -102,22 +122,7 @@ impl AppHandler {
             gpu.render
                 .update_glow(&gpu.context.queue, &self.app.sim_config);
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Glow Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load, // Don't clear, load existing content
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let mut render_pass = color_pass(&mut encoder, &view, "Glow Render Pass", LoadOp::Load);
 
             render_pass.set_pipeline(&gpu.render.glow_pipeline);
             render_pass.set_bind_group(0, &gpu.glow_bind_group, &[]);
@@ -126,22 +131,8 @@ impl AppHandler {
 
         // Render solid particles on top
         {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Particle Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load, // Don't clear, load existing content (glow)
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let mut render_pass =
+                color_pass(&mut encoder, &view, "Particle Render Pass", LoadOp::Load);
 
             match self.app.sim_config.boundary_mode {
                 BoundaryMode::Repel | BoundaryMode::Wrap => {
@@ -201,29 +192,16 @@ impl AppHandler {
             gpu.brush_pipelines.update_render(
                 &gpu.context.queue,
                 &self.brush,
-                self.app.sim_config.world_size.x,
-                self.app.sim_config.world_size.y,
-                self.camera.zoom,
-                self.camera.offset.x,
-                self.camera.offset.y,
+                self.app.sim_config.world_size,
+                &self.camera,
             );
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Brush Circle Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let mut render_pass = color_pass(
+                &mut encoder,
+                &view,
+                "Brush Circle Render Pass",
+                LoadOp::Load,
+            );
 
             render_pass.set_pipeline(&gpu.brush_pipelines.circle_pipeline);
             render_pass.set_bind_group(0, &gpu.brush_pipelines.circle_bind_group, &[]);
@@ -247,22 +225,7 @@ impl AppHandler {
 
         // Render egui on top
         {
-            let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Egui Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
+            let render_pass = color_pass(&mut encoder, &view, "Egui Render Pass", LoadOp::Load);
 
             // Use forget_lifetime to satisfy the static lifetime requirement
             let mut render_pass = render_pass.forget_lifetime();

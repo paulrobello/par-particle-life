@@ -564,18 +564,21 @@ impl SpatialHashPipelines {
     }
 
     /// Create bin sort bind group.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// `pos_type` and `velocities` are passed as `[in, out]` pairs (matching
+    /// the caller's ping-pong direction) rather than four separate buffer
+    /// references — the pair is the unit the sort step actually consumes.
     pub fn create_sort_bind_group(
         &self,
         device: &Device,
-        pos_type_in: &Buffer,
-        pos_type_out: &Buffer,
-        vel_in: &Buffer,
-        vel_out: &Buffer,
+        pos_type: [&Buffer; 2],
+        velocities: [&Buffer; 2],
         spatial: &SpatialHashBuffers,
         use_offset_buffer_a: bool,
         use_count_buffer_a: bool,
     ) -> BindGroup {
+        let (pos_type_in, pos_type_out) = (&pos_type[0], &pos_type[1]);
+        let (vel_in, vel_out) = (&velocities[0], &velocities[1]);
         let offset_buffer = if use_offset_buffer_a {
             &spatial.bin_counts_a
         } else {

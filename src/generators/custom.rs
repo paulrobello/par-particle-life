@@ -104,6 +104,12 @@ impl CustomGenerator {
         let expr = self.compiled.as_ref().unwrap();
         let mut matrix = InteractionMatrix::new(num_types);
 
+        // Use a seeded RNG so the same custom-generator expression reproduces
+        // the same matrix across runs (ARC-019). The DSL `random()` builtin
+        // draws from this RNG; deterministic generators that don't call
+        // `random()` are unaffected.
+        let mut rng = super::seeded_rng();
+
         for i in 0..num_types {
             for j in 0..num_types {
                 let ctx = EvalContext {
@@ -111,7 +117,7 @@ impl CustomGenerator {
                     j: j as f32,
                     n: num_types as f32,
                 };
-                let val = expr.eval(&ctx)?;
+                let val = expr.eval(&ctx, &mut rng)?;
                 matrix.set(i, j, val);
             }
         }
@@ -231,7 +237,9 @@ mod tests {
             num_types: None,
             compiled: None,
         };
-        let err = generator.generate(4).expect_err("NaN-producing expression must error");
+        let err = generator
+            .generate(4)
+            .expect_err("NaN-producing expression must error");
         match err {
             ExprError::Eval(msg) => assert!(
                 msg.contains("expression produced") || msg.contains("pow() of negative base"),
@@ -251,7 +259,9 @@ mod tests {
             num_types: None,
             compiled: None,
         };
-        let err = generator.generate(2).expect_err("Inf-producing expression must error");
+        let err = generator
+            .generate(2)
+            .expect_err("Inf-producing expression must error");
         match err {
             ExprError::Eval(msg) => assert!(
                 msg.contains("expression produced"),

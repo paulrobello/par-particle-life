@@ -63,9 +63,7 @@ impl ApplicationHandler for AppHandler {
             let window = match event_loop.create_window(window_attrs) {
                 Ok(w) => Arc::new(w),
                 Err(e) => {
-                    log::error!(
-                        "Failed to create window: {e}. Exiting event loop."
-                    );
+                    log::error!("Failed to create window: {e}. Exiting event loop.");
                     event_loop.exit();
                     return;
                 }

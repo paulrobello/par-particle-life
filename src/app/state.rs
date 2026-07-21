@@ -1,7 +1,7 @@
 //! Main application state.
 
-use super::error::AppError;
 use super::AppConfig;
+use super::error::AppError;
 use crate::generators::{
     colors::{Color, CustomPalette, PaletteType, generate_colors},
     custom::CustomGenerator,
@@ -97,7 +97,6 @@ impl App {
             glow_size: config.render_glow_size,
             glow_steepness: config.render_glow_steepness,
             spatial_hash_cell_size: config.render_spatial_hash_cell_size,
-            use_spatial_hash: true, // always on
             temperature: config.phys_temperature,
             time_scale: config.phys_time_scale,
             velocity_coupling: config.phys_velocity_coupling,
@@ -350,10 +349,7 @@ impl App {
     }
 
     /// Generate rules from a custom generator, with error handling.
-    pub fn generate_custom_rules(
-        &mut self,
-        index: usize,
-    ) -> Result<InteractionMatrix, AppError> {
+    pub fn generate_custom_rules(&mut self, index: usize) -> Result<InteractionMatrix, AppError> {
         let num_types = self.sim_config.num_types as usize;
         self.custom_generators
             .get_mut(index)
@@ -372,12 +368,6 @@ impl App {
     /// Toggle simulation running state.
     pub fn toggle_running(&mut self) {
         self.running = !self.running;
-    }
-
-    /// Get colors as RGBA f32 arrays for GPU.
-    pub fn colors_as_rgba(&self) -> Vec<[f32; 4]> {
-        // Color is already [f32; 4], just clone
-        self.colors.clone()
     }
 
     /// Scale min/max interaction radii so neighbor counts stay roughly constant.
@@ -409,6 +399,13 @@ impl App {
         const TARGET_NEIGHBORS: f32 = 350.0;
         const MIN_SCALE: f32 = 0.25;
         const MAX_SCALE: f32 = 1.5;
+        // Per-particle radius clamp that bounds the absolute radius regardless
+        // of the scale factor — keeps the GPU work-load predictable even when
+        // the world shrinks to a few particles.
+        const RADIUS_FLOOR: f32 = 2.0;
+        const RADIUS_CEIL: f32 = 512.0;
+        // Half-unit separation between min/max keeps max > min after scaling.
+        const MIN_MAX_GAP: f32 = 0.5;
 
         let area = world_size.x * world_size.y;
         if area <= 0.0 || num_particles == 0 {
@@ -425,16 +422,13 @@ impl App {
         let mut scale = (TARGET_NEIGHBORS / current_neighbors).sqrt();
         scale = scale.clamp(MIN_SCALE, MAX_SCALE);
 
-        let clamp_min = 2.0;
-        let clamp_max = 512.0;
-
         for (min_r, max_r) in radius_matrix
             .min_radius
             .iter_mut()
             .zip(radius_matrix.max_radius.iter_mut())
         {
-            *min_r = (*min_r * scale).clamp(clamp_min, clamp_max);
-            *max_r = (*max_r * scale).clamp(*min_r + 0.5, clamp_max * 2.0);
+            *min_r = (*min_r * scale).clamp(RADIUS_FLOOR, RADIUS_CEIL);
+            *max_r = (*max_r * scale).clamp(*min_r + MIN_MAX_GAP, RADIUS_CEIL * 2.0);
         }
     }
 }

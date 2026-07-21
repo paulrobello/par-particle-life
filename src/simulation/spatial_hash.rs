@@ -347,7 +347,10 @@ mod tests {
         let particles = make_particles();
         let err = SpatialHash::build(&particles, 10.0, 0.0, Vec2::new(f32::NAN, 100.0))
             .expect_err("NaN world_size must be rejected");
-        assert!(err.contains("finite"), "expected finite-check error, got: {err}");
+        assert!(
+            err.contains("finite"),
+            "expected finite-check error, got: {err}"
+        );
     }
 
     #[test]
@@ -355,7 +358,10 @@ mod tests {
         let particles = make_particles();
         let err = SpatialHash::build(&particles, 10.0, 0.0, Vec2::new(0.0, 100.0))
             .expect_err("zero world_size must be rejected");
-        assert!(err.contains("positive"), "expected positive-check error, got: {err}");
+        assert!(
+            err.contains("positive"),
+            "expected positive-check error, got: {err}"
+        );
     }
 
     #[test]

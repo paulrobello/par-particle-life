@@ -28,17 +28,16 @@ impl AppHandler {
     pub(crate) fn sync_buffers(&mut self) {
         if let Some(gpu) = &self.gpu {
             // Recreate buffers with new particle count
-            let colors_rgba = self.app.colors_as_rgba();
-            let new_buffers = SimulationBuffers::new(
-                &gpu.context.device,
-                &self.app.particles,
-                &self.app.interaction_matrix,
-                &self.app.radius_matrix,
-                &colors_rgba,
-                &self.app.type_masses,
-                &self.app.type_sizes,
-                &self.app.sim_config,
-            );
+            let view = crate::renderer::gpu::ParticleView {
+                particles: &self.app.particles,
+                interaction_matrix: &self.app.interaction_matrix,
+                radius_matrix: &self.app.radius_matrix,
+                colors: &self.app.colors,
+                type_masses: &self.app.type_masses,
+                type_sizes: &self.app.type_sizes,
+            };
+            let new_buffers =
+                SimulationBuffers::new(&gpu.context.device, &view, &self.app.sim_config);
 
             // Recreate spatial hash buffers
             let max_radius = self.app.radius_matrix.max_interaction_radius();
@@ -78,8 +77,7 @@ impl AppHandler {
                 // Sync obstacles to new buffers (update_obstacles sets num_obstacles internally)
                 let obs_data: Vec<crate::simulation::ObstacleData> =
                     self.app.obstacles.iter().map(|o| o.into()).collect();
-                gpu.buffers
-                    .update_obstacles(&gpu.context.queue, &obs_data);
+                gpu.buffers.update_obstacles(&gpu.context.queue, &obs_data);
 
                 // Always invalidate spatial bind groups since they reference sim_buffers
                 // which were just recreated above
@@ -219,8 +217,8 @@ impl AppHandler {
 
     pub(crate) fn sync_colors(&mut self) {
         if let Some(gpu) = &self.gpu {
-            let colors_rgba = self.app.colors_as_rgba();
-            gpu.buffers.update_colors(&gpu.context.queue, &colors_rgba);
+            gpu.buffers
+                .update_colors(&gpu.context.queue, &self.app.colors);
         }
     }
 
@@ -243,8 +241,7 @@ impl AppHandler {
             let obs_data: Vec<crate::simulation::ObstacleData> =
                 self.app.obstacles.iter().map(|o| o.into()).collect();
             // update_obstacles sets gpu.buffers.num_obstacles internally.
-            gpu.buffers
-                .update_obstacles(&gpu.context.queue, &obs_data);
+            gpu.buffers.update_obstacles(&gpu.context.queue, &obs_data);
         }
     }
 

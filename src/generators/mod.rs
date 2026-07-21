@@ -16,12 +16,9 @@ pub use rules::RuleType;
 ///
 /// Replaces the previous unseeded `rand::rng()` calls so generated matrices,
 /// palettes, and spawn patterns are reproducible across runs for the same
-/// inputs (ARC-019). All generators in `rules`, `colors`, and `positions`
-/// draw from a `ChaCha8Rng` seeded with a fixed constant.
-///
-/// This intentionally does **not** reach the DSL evaluator's `random()`
-/// function (in `expression.rs`); that path still uses `rand::random()`
-/// pending a coordinated fix.
+/// inputs (ARC-019). All generators in `rules`, `colors`, `positions`, and
+/// the DSL evaluator's `random()` builtin (via `expression.rs`) draw from a
+/// `ChaCha8Rng` seeded with a fixed constant.
 pub(crate) fn seeded_rng() -> rand_chacha::ChaCha8Rng {
     use rand::SeedableRng;
     // Fixed seed: same inputs always yield the same matrix/palette/pattern.

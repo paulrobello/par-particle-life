@@ -252,9 +252,11 @@ mod tests {
         fs::create_dir_all(&dir).expect("create preset test dir");
         let path = dir.join("hostile-preset.json");
 
-        let mut config = SimulationConfig::default();
-        config.num_particles = u32::MAX;
-        config.num_types = 3;
+        let config = SimulationConfig {
+            num_particles: u32::MAX,
+            num_types: 3,
+            ..Default::default()
+        };
         // Matrix shape matches the (invalid) config so the validate() failure
         // is specifically about num_particles, not shape.
         let matrix = InteractionMatrix::filled(3, 0.25);

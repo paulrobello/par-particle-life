@@ -31,8 +31,8 @@ mod pipelines;
 
 pub use buffers::{
     BrushParamsUniform, BrushRenderUniform, GlowParamsUniform, InfiniteParamsUniform,
-    MirrorParamsUniform, RenderBuffers, SimParamsUniform, SimulationBuffers, SpatialHashBuffers,
-    SpatialParamsUniform, SpawnParamsUniform,
+    MirrorParamsUniform, ParticleView, RenderBuffers, SimParamsUniform, SimulationBuffers,
+    SpatialHashBuffers, SpatialParamsUniform, SpawnParamsUniform,
 };
 pub use context::GpuContext;
 pub use pipelines::{BrushPipelines, ComputePipelines, RenderPipelines, SpatialHashPipelines};

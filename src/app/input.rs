@@ -231,8 +231,10 @@ mod tests {
 
     #[test]
     fn test_screen_to_world_with_zoom() {
-        let mut camera = CameraState::default();
-        camera.zoom = 2.0;
+        let camera = CameraState {
+            zoom: 2.0,
+            ..Default::default()
+        };
         let screen_size = Vec2::new(800.0, 600.0);
         let world_size = Vec2::new(1600.0, 1200.0);
 

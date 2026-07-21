@@ -4,6 +4,7 @@
 //! ==, !=, <, >, <=, >= comparisons; ternary (?: );
 //! abs, sin, cos, random, min, max, pow functions.
 
+use rand::{Rng, RngExt};
 use std::fmt;
 
 /// Expression AST node.
@@ -123,11 +124,20 @@ impl Expr {
     }
 
     /// Evaluate the expression with the given context.
-    pub fn eval(&self, ctx: &EvalContext) -> Result<f32, ExprError> {
-        self.eval_depth(ctx, 0)
+    ///
+    /// `rng` drives the `random()` builtin so custom-generator matrices are
+    /// reproducible across runs: callers pass a `seeded_rng()` so the same
+    /// expression text always yields the same matrix.
+    pub fn eval<R: Rng>(&self, ctx: &EvalContext, rng: &mut R) -> Result<f32, ExprError> {
+        self.eval_depth(ctx, 0, rng)
     }
 
-    fn eval_depth(&self, ctx: &EvalContext, depth: u32) -> Result<f32, ExprError> {
+    fn eval_depth<R: Rng>(
+        &self,
+        ctx: &EvalContext,
+        depth: u32,
+        rng: &mut R,
+    ) -> Result<f32, ExprError> {
         if depth > MAX_EXPR_DEPTH {
             return Err(ExprError::Eval("expression too deeply nested".into()));
         }
@@ -137,8 +147,8 @@ impl Expr {
             Expr::Var(Var::J) => Ok(ctx.j),
             Expr::Var(Var::N) => Ok(ctx.n),
             Expr::BinOp { op, left, right } => {
-                let l = left.eval_depth(ctx, depth + 1)?;
-                let r = right.eval_depth(ctx, depth + 1)?;
+                let l = left.eval_depth(ctx, depth + 1, rng)?;
+                let r = right.eval_depth(ctx, depth + 1, rng)?;
                 match op {
                     BinOp::Add => Ok(l + r),
                     BinOp::Sub => Ok(l - r),
@@ -165,57 +175,58 @@ impl Expr {
                     BinOp::Ge => Ok(if l >= r { 1.0 } else { 0.0 }),
                 }
             }
-            Expr::UnaryNeg(inner) => Ok(-inner.eval_depth(ctx, depth + 1)?),
+            Expr::UnaryNeg(inner) => Ok(-inner.eval_depth(ctx, depth + 1, rng)?),
             Expr::Ternary {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                let c = cond.eval_depth(ctx, depth + 1)?;
+                let c = cond.eval_depth(ctx, depth + 1, rng)?;
                 if c != 0.0 {
-                    then_expr.eval_depth(ctx, depth + 1)
+                    then_expr.eval_depth(ctx, depth + 1, rng)
                 } else {
-                    else_expr.eval_depth(ctx, depth + 1)
+                    else_expr.eval_depth(ctx, depth + 1, rng)
                 }
             }
-            Expr::Call { func, args } => eval_func(*func, args, ctx, depth + 1),
+            Expr::Call { func, args } => eval_func(*func, args, ctx, depth + 1, rng),
         }
     }
 }
 
-fn eval_func(
+fn eval_func<R: Rng>(
     func: Func,
     args: &[Expr],
     ctx: &EvalContext,
     depth: u32,
+    rng: &mut R,
 ) -> Result<f32, ExprError> {
     match func {
         Func::Abs => {
-            let v = expect_arg(func, args, 1, ctx, depth)?;
+            let v = expect_arg(func, args, 1, ctx, depth, rng)?;
             Ok(v[0].abs())
         }
         Func::Sin => {
-            let v = expect_arg(func, args, 1, ctx, depth)?;
+            let v = expect_arg(func, args, 1, ctx, depth, rng)?;
             Ok(v[0].sin())
         }
         Func::Cos => {
-            let v = expect_arg(func, args, 1, ctx, depth)?;
+            let v = expect_arg(func, args, 1, ctx, depth, rng)?;
             Ok(v[0].cos())
         }
         Func::Random => {
-            let _ = expect_arg(func, args, 0, ctx, depth)?;
-            Ok(rand::random::<f32>() * 2.0 - 1.0)
+            let _ = expect_arg(func, args, 0, ctx, depth, rng)?;
+            Ok(rng.random::<f32>() * 2.0 - 1.0)
         }
         Func::Min => {
-            let v = expect_arg(func, args, 2, ctx, depth)?;
+            let v = expect_arg(func, args, 2, ctx, depth, rng)?;
             Ok(v[0].min(v[1]))
         }
         Func::Max => {
-            let v = expect_arg(func, args, 2, ctx, depth)?;
+            let v = expect_arg(func, args, 2, ctx, depth, rng)?;
             Ok(v[0].max(v[1]))
         }
         Func::Pow => {
-            let v = expect_arg(func, args, 2, ctx, depth)?;
+            let v = expect_arg(func, args, 2, ctx, depth, rng)?;
             let (base, exp) = (v[0], v[1]);
             // powf() on a negative base with a non-integral exponent yields NaN;
             // surface a clear error instead of poisoning the matrix (ARC-006).
@@ -229,12 +240,13 @@ fn eval_func(
     }
 }
 
-fn expect_arg(
+fn expect_arg<R: Rng>(
     func: Func,
     args: &[Expr],
     expected: usize,
     ctx: &EvalContext,
     depth: u32,
+    rng: &mut R,
 ) -> Result<Vec<f32>, ExprError> {
     if args.len() != expected {
         return Err(ExprError::Eval(format!(
@@ -242,7 +254,7 @@ fn expect_arg(
             args.len()
         )));
     }
-    args.iter().map(|a| a.eval_depth(ctx, depth)).collect()
+    args.iter().map(|a| a.eval_depth(ctx, depth, rng)).collect()
 }
 
 // === Tokenizer ===
@@ -642,12 +654,13 @@ mod tests {
     fn eval_str(expr: &str, i: f32, j: f32, n: f32) -> f32 {
         let parsed = Expr::parse(expr).unwrap();
         let ctx = EvalContext { i, j, n };
-        parsed.eval(&ctx).unwrap()
+        let mut rng = super::super::seeded_rng();
+        parsed.eval(&ctx, &mut rng).unwrap()
     }
 
     #[test]
     fn test_literal() {
-        assert!((eval_str("3.14", 0.0, 0.0, 0.0) - 3.14).abs() < 0.001);
+        assert!((eval_str("2.5", 0.0, 0.0, 0.0) - 2.5).abs() < 0.001);
     }
 
     #[test]
@@ -777,8 +790,15 @@ mod tests {
     fn test_pow_negative_base_nonintegral_exponent_errors() {
         // pow(-1, 0.5) would produce NaN; the Func::Pow gate must surface a clean error.
         let expr = Expr::parse("pow(-1.0, 0.5)").unwrap();
-        let ctx = EvalContext { i: 0.0, j: 0.0, n: 0.0 };
-        let err = expr.eval(&ctx).expect_err("pow(-1, 0.5) must error");
+        let ctx = EvalContext {
+            i: 0.0,
+            j: 0.0,
+            n: 0.0,
+        };
+        let mut rng = super::super::seeded_rng();
+        let err = expr
+            .eval(&ctx, &mut rng)
+            .expect_err("pow(-1, 0.5) must error");
         match err {
             ExprError::Eval(msg) => assert!(
                 msg.contains("pow() of negative base"),
@@ -795,8 +815,13 @@ mod tests {
         // matrix.validate(). This test pins the evaluator behaviour: the gate does not
         // spuriously reject large integral exponents.
         let expr = Expr::parse("pow(2.0, 99999.0)").unwrap();
-        let ctx = EvalContext { i: 0.0, j: 0.0, n: 0.0 };
-        let v = expr.eval(&ctx).unwrap();
+        let ctx = EvalContext {
+            i: 0.0,
+            j: 0.0,
+            n: 0.0,
+        };
+        let mut rng = super::super::seeded_rng();
+        let v = expr.eval(&ctx, &mut rng).unwrap();
         assert!(v.is_infinite(), "pow(2, 99999) should be +Inf, got {v}");
     }
 
@@ -818,7 +843,12 @@ mod tests {
     fn test_reasonable_nesting_parses_fine() {
         // A modest nesting level (well under the 256 cap) must still parse and eval.
         let expr = Expr::parse("((((i + j))))").unwrap();
-        let ctx = EvalContext { i: 2.0, j: 3.0, n: 0.0 };
-        assert!((expr.eval(&ctx).unwrap() - 5.0).abs() < 0.001);
+        let ctx = EvalContext {
+            i: 2.0,
+            j: 3.0,
+            n: 0.0,
+        };
+        let mut rng = super::super::seeded_rng();
+        assert!((expr.eval(&ctx, &mut rng).unwrap() - 5.0).abs() < 0.001);
     }
 }

@@ -27,17 +27,15 @@ impl AppHandler {
         let context = pollster::block_on(GpuContext::new(window.clone(), self.app.config.vsync))?;
 
         // Create simulation buffers
-        let colors_rgba = self.app.colors_as_rgba();
-        let buffers = SimulationBuffers::new(
-            &context.device,
-            &self.app.particles,
-            &self.app.interaction_matrix,
-            &self.app.radius_matrix,
-            &colors_rgba,
-            &self.app.type_masses,
-            &self.app.type_sizes,
-            &self.app.sim_config,
-        );
+        let view = crate::renderer::gpu::ParticleView {
+            particles: &self.app.particles,
+            interaction_matrix: &self.app.interaction_matrix,
+            radius_matrix: &self.app.radius_matrix,
+            colors: &self.app.colors,
+            type_masses: &self.app.type_masses,
+            type_sizes: &self.app.type_sizes,
+        };
+        let buffers = SimulationBuffers::new(&context.device, &view, &self.app.sim_config);
 
         // Create pipelines
         let compute = ComputePipelines::new(&context.device);
@@ -51,11 +49,6 @@ impl AppHandler {
 
         // Create brush pipelines
         let brush_pipelines = BrushPipelines::new(&context.device, context.surface_format());
-        let brush_bind_group = brush_pipelines.create_force_bind_group(
-            &context.device,
-            buffers.current_pos_type(),
-            buffers.current_velocities(),
-        );
 
         // Create initial render bind groups (will be recreated each frame for GPU compute)
         let render_bind_group =
@@ -145,7 +138,6 @@ impl AppHandler {
             timestamp_labels: Vec::new(),
             timestamps_supported,
             brush_pipelines,
-            _brush_bind_group: brush_bind_group,
             render_bind_group,
             glow_bind_group,
             mirror_bind_group,

@@ -381,24 +381,24 @@ impl BrushPipelines {
     }
 
     /// Update brush render parameters for circle display.
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// `world_size` and `camera` are passed as aggregated types rather than
+    /// individual floats so the call mirrors how the caller already holds
+    /// them (as fields on `SimulationConfig` and `CameraState`).
     pub fn update_render(
         &self,
         queue: &Queue,
         brush: &crate::app::BrushState,
-        world_width: f32,
-        world_height: f32,
-        camera_zoom: f32,
-        camera_offset_x: f32,
-        camera_offset_y: f32,
+        world_size: glam::Vec2,
+        camera: &crate::app::CameraState,
     ) {
         let params = BrushRenderUniform::from_brush_state(
             brush,
-            world_width,
-            world_height,
-            camera_zoom,
-            camera_offset_x,
-            camera_offset_y,
+            world_size.x,
+            world_size.y,
+            camera.zoom,
+            camera.offset.x,
+            camera.offset.y,
         );
         queue.write_buffer(&self.render_buffer, 0, bytemuck::bytes_of(&params));
     }

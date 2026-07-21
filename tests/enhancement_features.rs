@@ -188,7 +188,7 @@ fn matrix_variation_oscillates_from_base_without_mutating_it() {
     assert!(varied.data.iter().all(|value| (-1.0..=1.0).contains(value)));
 }
 
-use par_particle_life::renderer::gpu::{SimParamsUniform, SimulationBuffers};
+use par_particle_life::renderer::gpu::{ParticleView, SimParamsUniform, SimulationBuffers};
 use par_particle_life::simulation::Particle;
 
 fn request_headless_wgpu_device() -> Option<(wgpu::Device, wgpu::Queue)> {
@@ -346,16 +346,15 @@ fn simulation_buffers_production_paths_write_active_particle_count_to_uniform() 
     let type_masses = vec![1.0; num_types];
     let type_sizes = vec![1.0; num_types];
 
-    let mut buffers = SimulationBuffers::new(
-        &device,
-        &particles,
-        &interaction_matrix,
-        &radius_matrix,
-        &colors,
-        &type_masses,
-        &type_sizes,
-        &config,
-    );
+    let view = ParticleView {
+        particles: &particles,
+        interaction_matrix: &interaction_matrix,
+        radius_matrix: &radius_matrix,
+        colors: &colors,
+        type_masses: &type_masses,
+        type_sizes: &type_sizes,
+    };
+    let mut buffers = SimulationBuffers::new(&device, &view, &config);
 
     let initial_params = read_sim_params_uniform(&device, &queue, &buffers.params);
     assert_eq!(initial_params.num_particles, 3);

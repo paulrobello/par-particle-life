@@ -62,27 +62,15 @@ fn default_type_sizes() -> Vec<f32> {
     vec![1.0; 7]
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-
-    use super::Preset;
-
-    #[test]
-    fn preset_file_detection_accepts_json_files_case_insensitively() {
-        assert!(Preset::is_preset_file(Path::new("example.json")));
-        assert!(Preset::is_preset_file(Path::new("example.JSON")));
-    }
-
-    #[test]
-    fn preset_file_detection_rejects_non_json_files_and_directories() {
-        assert!(!Preset::is_preset_file(Path::new("example.txt")));
-        assert!(!Preset::is_preset_file(Path::new("example")));
-    }
-}
-
 impl Preset {
     /// Create a new preset from the current simulation state.
+    //
+    // too_many_arguments: this constructor snapshots heterogeneous pieces of
+    // simulation state (config, matrices, generator choices, per-type slices,
+    // obstacles) into the serialisable `Preset`. There is no single natural
+    // bundle — each argument maps 1:1 to a distinct `Preset` field — so
+    // collapsing them into a wrapper struct would just rename the args
+    // without reducing the surface.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         name: impl Into<String>,
@@ -141,7 +129,7 @@ impl Preset {
     /// crafted `.json` (SEC-001). A legitimate preset is at most a few KB.
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
-        const MAX_PRESET_FILE_SIZE: u64 = 1 * 1024 * 1024; // 1 MiB
+        const MAX_PRESET_FILE_SIZE: u64 = 1024 * 1024; // 1 MiB
         let file_size = std::fs::metadata(path)
             .with_context(|| format!("Failed to stat preset at {}", path.display()))?
             .len();
@@ -176,9 +164,7 @@ impl Preset {
         })?;
 
         let n = self.sim_config.num_types as usize;
-        if self.interaction_matrix.size != n
-            || self.interaction_matrix.data.len() != n * n
-        {
+        if self.interaction_matrix.size != n || self.interaction_matrix.data.len() != n * n {
             anyhow::bail!(
                 "Preset '{}' interaction_matrix shape mismatch: size={}, data.len={}, \
                  expected {}x{} ({})",
@@ -283,5 +269,24 @@ impl Preset {
 
         presets.sort();
         Ok(presets)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::Preset;
+
+    #[test]
+    fn preset_file_detection_accepts_json_files_case_insensitively() {
+        assert!(Preset::is_preset_file(Path::new("example.json")));
+        assert!(Preset::is_preset_file(Path::new("example.JSON")));
+    }
+
+    #[test]
+    fn preset_file_detection_rejects_non_json_files_and_directories() {
+        assert!(!Preset::is_preset_file(Path::new("example.txt")));
+        assert!(!Preset::is_preset_file(Path::new("example")));
     }
 }

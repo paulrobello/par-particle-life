@@ -131,55 +131,6 @@ pub struct AppConfig {
     pub phys_integration_method: IntegrationMethod,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_integration_method_deserializes_to_euler() {
-        let json = r#"{
-            "title": "test",
-            "window_width": 800,
-            "window_height": 600,
-            "target_fps": 60,
-            "vsync": true,
-            "ui_simulation_open": true,
-            "ui_physics_open": true,
-            "ui_generators_open": true,
-            "ui_interaction_matrix_open": false,
-            "ui_brush_tools_open": true,
-            "ui_rendering_open": false,
-            "ui_presets_open": false,
-            "ui_keyboard_shortcuts_open": false,
-            "ui_obstacles_open": false,
-            "phys_force_factor": 1.0,
-            "phys_friction": 0.3,
-            "phys_repel_strength": 3.0,
-            "phys_max_velocity": 500.0,
-            "phys_boundary_mode": "Wrap",
-            "phys_wall_repel_strength": 100.0,
-            "phys_mirror_wrap_count": 5,
-            "sim_num_particles": 1000,
-            "sim_num_types": 7,
-            "gen_rule": "Random",
-            "gen_palette": "Rainbow",
-            "gen_pattern": "Disk",
-            "render_particle_size": 0.5,
-            "render_background_color": [0.0, 0.0, 0.0],
-            "render_glow_enabled": true,
-            "render_glow_intensity": 0.35,
-            "render_glow_size": 4.0,
-            "render_glow_steepness": 2.0,
-            "render_spatial_hash_cell_size": 64.0,
-            "auto_scale_radii": true
-        }"#;
-
-        let config: AppConfig = serde_json::from_str(json).unwrap();
-
-        assert_eq!(config.phys_integration_method, IntegrationMethod::Euler);
-    }
-}
-
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -392,5 +343,54 @@ impl AppConfig {
         std::fs::write(&config_path, contents)?;
         log::info!("Saved config to {}", config_path.display());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_integration_method_deserializes_to_euler() {
+        let json = r#"{
+            "title": "test",
+            "window_width": 800,
+            "window_height": 600,
+            "target_fps": 60,
+            "vsync": true,
+            "ui_simulation_open": true,
+            "ui_physics_open": true,
+            "ui_generators_open": true,
+            "ui_interaction_matrix_open": false,
+            "ui_brush_tools_open": true,
+            "ui_rendering_open": false,
+            "ui_presets_open": false,
+            "ui_keyboard_shortcuts_open": false,
+            "ui_obstacles_open": false,
+            "phys_force_factor": 1.0,
+            "phys_friction": 0.3,
+            "phys_repel_strength": 3.0,
+            "phys_max_velocity": 500.0,
+            "phys_boundary_mode": "Wrap",
+            "phys_wall_repel_strength": 100.0,
+            "phys_mirror_wrap_count": 5,
+            "sim_num_particles": 1000,
+            "sim_num_types": 7,
+            "gen_rule": "Random",
+            "gen_palette": "Rainbow",
+            "gen_pattern": "Disk",
+            "render_particle_size": 0.5,
+            "render_background_color": [0.0, 0.0, 0.0],
+            "render_glow_enabled": true,
+            "render_glow_intensity": 0.35,
+            "render_glow_size": 4.0,
+            "render_glow_steepness": 2.0,
+            "render_spatial_hash_cell_size": 64.0,
+            "auto_scale_radii": true
+        }"#;
+
+        let config: AppConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.phys_integration_method, IntegrationMethod::Euler);
     }
 }

@@ -12,6 +12,20 @@ use crate::simulation::{
 };
 use crate::video_recorder::VideoFormat;
 
+/// Open `path` in the platform's native file manager.
+///
+/// Used by the "Open Presets Folder" and "Open Custom Generators" buttons so
+/// users can drop files in without navigating to the path by hand.
+fn open_in_file_manager(path: impl AsRef<std::path::Path>) {
+    let path = path.as_ref();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(path).spawn();
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("explorer").arg(path).spawn();
+}
+
 impl AppHandler {
     pub(crate) fn draw_ui(&mut self, ctx: &egui::Context) {
         if !self.show_ui {
@@ -127,10 +141,7 @@ impl AppHandler {
             ));
         ui.label(format!(
             "Window: {}x{} | World: {:.0}x{:.0}",
-            win_w,
-            win_h,
-            self.app.sim_config.world_size.x,
-            self.app.sim_config.world_size.y
+            win_w, win_h, self.app.sim_config.world_size.x, self.app.sim_config.world_size.y
         ));
         ui.separator();
     }
@@ -320,9 +331,7 @@ impl AppHandler {
         }
 
         // Draw shape preview cursor for Obstacle tool placement
-        if self.brush.tool == BrushTool::Obstacle
-            && !self.cursor_over_ui
-            && !self.obstacle_dragging
+        if self.brush.tool == BrushTool::Obstacle && !self.cursor_over_ui && !self.obstacle_dragging
         {
             let cursor_world = self.brush.position;
             let norm_cx = ((cursor_world.x - self.camera.offset.x) * 2.0 / world_size.x - 1.0)
@@ -712,12 +721,7 @@ impl AppHandler {
             if let Err(e) = Preset::ensure_presets_dir() {
                 self.preset_status = format!("Error: {}", e);
             } else {
-                #[cfg(target_os = "macos")]
-                let _ = std::process::Command::new("open").arg(&dir).spawn();
-                #[cfg(target_os = "linux")]
-                let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
-                #[cfg(target_os = "windows")]
-                let _ = std::process::Command::new("explorer").arg(&dir).spawn();
+                open_in_file_manager(&dir);
             }
         }
 
@@ -878,8 +882,7 @@ impl AppHandler {
             .default_open(self.ui_simulation_open)
             .show(ui, |ui| {
                 let mut num_particles = self.app.sim_config.num_particles;
-                let particle_options =
-                    [1000u32, 2000, 4000, 8000, 16000, 32000, 64000, 128000];
+                let particle_options = [1000u32, 2000, 4000, 8000, 16000, 32000, 64000, 128000];
                 egui::ComboBox::from_label("Particles")
                     .selected_text(format!("{}", num_particles))
                     .show_ui(ui, |ui| {
@@ -899,8 +902,7 @@ impl AppHandler {
                 if num_types != self.app.sim_config.num_types {
                     self.app.sim_config.num_types = num_types;
                     self.app.config.sim_num_types = num_types;
-                    self.app.radius_matrix =
-                        RadiusMatrix::default_for_size(num_types as usize);
+                    self.app.radius_matrix = RadiusMatrix::default_for_size(num_types as usize);
                     self.app.rebalance_radii_for_density();
                     self.app.regenerate_rules();
                     self.app.regenerate_colors();
@@ -924,9 +926,8 @@ impl AppHandler {
                         self.app.rebalance_radii_for_density();
                     } else {
                         // Reset to defaults when disabling auto-scaling
-                        self.app.radius_matrix = RadiusMatrix::default_for_size(
-                            self.app.sim_config.num_types as usize,
-                        );
+                        self.app.radius_matrix =
+                            RadiusMatrix::default_for_size(self.app.sim_config.num_types as usize);
                         let max_r = self.app.radius_matrix.max_interaction_radius();
                         self.app.sim_config.spatial_hash_cell_size =
                             self.app.config.render_spatial_hash_cell_size.max(max_r);
@@ -1235,12 +1236,7 @@ impl AppHandler {
                         && let Ok(dir) =
                             crate::generators::custom::CustomGenerator::ensure_dir()
                     {
-                        #[cfg(target_os = "macos")]
-                        let _ = std::process::Command::new("open").arg(&dir).spawn();
-                        #[cfg(target_os = "linux")]
-                        let _ = std::process::Command::new("xdg-open").arg(&dir).spawn();
-                        #[cfg(target_os = "windows")]
-                        let _ = std::process::Command::new("explorer").arg(&dir).spawn();
+                        open_in_file_manager(&dir);
                     }
                     if ui.button("Reload").clicked() {
                         self.app.custom_generators = crate::generators::custom::CustomGenerator::list()
@@ -1446,12 +1442,8 @@ impl AppHandler {
                             }
                         });
                         changed |= ui
-                            .add(
-                                egui::Slider::new(&mut obs.bounce, 0.0..=1.0).text("Bounce"),
-                            )
-                            .on_hover_text(
-                                "Restitution: 0 = absorb impact, 1 = full bounce",
-                            )
+                            .add(egui::Slider::new(&mut obs.bounce, 0.0..=1.0).text("Bounce"))
+                            .on_hover_text("Restitution: 0 = absorb impact, 1 = full bounce")
                             .changed();
                     });
                 }

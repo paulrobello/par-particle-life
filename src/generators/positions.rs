@@ -248,13 +248,12 @@ fn bucket_counts(total: usize, buckets: usize) -> Vec<usize> {
     let mut rem = total % buckets;
     (0..buckets)
         .map(|_| {
-            let c = per + if rem > 0 {
+            per + if rem > 0 {
                 rem -= 1;
                 1
             } else {
                 0
-            };
-            c
+            }
         })
         .collect()
 }
@@ -546,7 +545,6 @@ fn stripes_generator(config: &SpawnConfig) -> Vec<Particle> {
         .into_iter()
         .enumerate()
     {
-
         for _ in 0..count {
             let (x, y) = if vertical {
                 let seg = config.width / config.num_types as f32;

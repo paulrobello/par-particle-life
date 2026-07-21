@@ -93,12 +93,6 @@ pub struct SimulationConfig {
 
     /// Use spatial hashing for force calculation optimization.
     ///
-    /// TODO(ARC-032): dead config — force-set `true` on every frame in
-    /// `update.rs`/`ui.rs`/`state.rs`. The field remains for now so the
-    /// cross-file write-sites in those handlers can be removed in
-    /// coordination with the agents that own them (Phase 4 reconciliation).
-    pub use_spatial_hash: bool,
-
     /// Spatial hash cell size. Should be >= max interaction radius.
     pub spatial_hash_cell_size: f32,
 
@@ -166,8 +160,6 @@ impl Default for SimulationConfig {
             glow_intensity: 0.35,
             glow_size: 4.0,
             glow_steepness: 2.0,
-            // Spatial hash enabled for debugging
-            use_spatial_hash: true,
             spatial_hash_cell_size: 64.0,
             background_color: [0.0, 0.0, 0.0], // Black
             max_bin_density: 5000.0,

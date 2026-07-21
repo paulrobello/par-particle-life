@@ -59,10 +59,8 @@ impl Particle {
         Self {
             x,
             y,
-            vx: 0.0,
-            vy: 0.0,
             particle_type,
-            _padding: [0; 3],
+            ..Default::default()
         }
     }
 
@@ -74,7 +72,7 @@ impl Particle {
             vx,
             vy,
             particle_type,
-            _padding: [0; 3],
+            ..Default::default()
         }
     }
 

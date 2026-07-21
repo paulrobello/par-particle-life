@@ -20,7 +20,10 @@ pub(crate) const MAX_TIMESTAMP_QUERIES: u32 = (MAX_PREFIX_PASSES + 6) * 2;
 /// run with the flags unset; developers opt in by setting them at launch.
 fn env_flag(name: &str) -> bool {
     match std::env::var(name) {
-        Ok(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+        Ok(v) => matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
         Err(_) => false,
     }
 }
@@ -168,10 +171,8 @@ impl SpatialBindGroupCache {
         // sort_from_a: 0 -> 1
         self.sort_from_a = Some(spatial_pipelines.create_sort_bind_group(
             device,
-            &sim_buffers.pos_type[0],   // Pos In
-            &sim_buffers.pos_type[1],   // Pos Out
-            &sim_buffers.velocities[0], // Vel In
-            &sim_buffers.velocities[1], // Vel Out
+            [&sim_buffers.pos_type[0], &sim_buffers.pos_type[1]], // [Pos In, Pos Out]
+            [&sim_buffers.velocities[0], &sim_buffers.velocities[1]], // [Vel In, Vel Out]
             spatial_buffers,
             offset_in_a,
             count_in_a,
@@ -179,10 +180,8 @@ impl SpatialBindGroupCache {
         // sort_from_b: 1 -> 0
         self.sort_from_b = Some(spatial_pipelines.create_sort_bind_group(
             device,
-            &sim_buffers.pos_type[1],   // Pos In
-            &sim_buffers.pos_type[0],   // Pos Out
-            &sim_buffers.velocities[1], // Vel In
-            &sim_buffers.velocities[0], // Vel Out
+            [&sim_buffers.pos_type[1], &sim_buffers.pos_type[0]], // [Pos In, Pos Out]
+            [&sim_buffers.velocities[1], &sim_buffers.velocities[0]], // [Vel In, Vel Out]
             spatial_buffers,
             offset_in_a,
             count_in_a,
@@ -284,8 +283,6 @@ pub(crate) struct GpuState {
     pub(crate) timestamps_supported: bool,
     /// Brush pipelines.
     pub(crate) brush_pipelines: BrushPipelines,
-    /// Brush force bind group (for future brush circle rendering).
-    pub(crate) _brush_bind_group: wgpu::BindGroup,
     /// Render bind group.
     pub(crate) render_bind_group: wgpu::BindGroup,
     /// Glow render bind group.

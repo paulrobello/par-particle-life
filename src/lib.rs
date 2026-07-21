@@ -36,8 +36,6 @@ pub mod app;
 pub mod generators;
 pub mod renderer;
 pub mod simulation;
-pub mod ui;
-pub mod utils;
 pub mod video_recorder;
 
 pub use app::App;
