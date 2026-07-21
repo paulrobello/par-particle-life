@@ -153,34 +153,12 @@ impl AppHandler {
         self.app.type_sizes = preset.type_sizes;
         self.app.obstacles = preset.obstacles;
 
-        // Mirror into persisted config so settings survive restart
-        self.app.config.sim_num_particles = self.app.sim_config.num_particles;
-        self.app.config.sim_num_types = self.app.sim_config.num_types;
-        self.app.config.phys_force_factor = self.app.sim_config.force_factor;
-        self.app.config.phys_friction = self.app.sim_config.friction;
-        self.app.config.phys_repel_strength = self.app.sim_config.repel_strength;
-        self.app.config.phys_max_velocity = self.app.sim_config.max_velocity;
-        self.app.config.phys_boundary_mode = self.app.sim_config.boundary_mode;
-        self.app.config.phys_wall_repel_strength = self.app.sim_config.wall_repel_strength;
-        self.app.config.phys_mirror_wrap_count = self.app.sim_config.mirror_wrap_count;
-        self.app.config.gen_rule = self.app.current_rule;
-        self.app.config.gen_palette = self.app.current_palette;
-        self.app.config.gen_pattern = self.app.current_pattern;
-        self.app.config.gen_matrix_variation_enabled = self.app.matrix_variation.enabled;
-        self.app.config.gen_matrix_variation_mode = self.app.matrix_variation.mode;
-        self.app.config.gen_matrix_variation_amplitude = self.app.matrix_variation.amplitude;
-        self.app.config.gen_matrix_variation_speed = self.app.matrix_variation.speed;
-        self.app.config.render_particle_size = self.app.sim_config.particle_size;
-        self.app.config.render_background_color = self.app.sim_config.background_color;
-        self.app.config.render_glow_enabled = self.app.sim_config.enable_glow;
-        self.app.config.render_glow_intensity = self.app.sim_config.glow_intensity;
-        self.app.config.render_glow_size = self.app.sim_config.glow_size;
-        self.app.config.render_glow_steepness = self.app.sim_config.glow_steepness;
-        self.app.config.render_spatial_hash_cell_size = self.app.sim_config.spatial_hash_cell_size;
-        self.app.config.phys_temperature = self.app.sim_config.temperature;
-        self.app.config.phys_time_scale = self.app.sim_config.time_scale;
-        self.app.config.phys_velocity_coupling = self.app.sim_config.velocity_coupling;
-        self.app.config.phys_integration_method = self.app.sim_config.integration_method;
+        // ARC-003/009: refresh the persisted-config mirror in one shot via
+        // snapshot_config. Replaces the ~30-line hand-mirror block and keeps
+        // every runtime field (including temperature / velocity_coupling /
+        // integration_method) consistent with what will be saved on close.
+        let snapshot = self.app.snapshot_config();
+        self.app.config = snapshot;
 
         // Regenerate colors from palette
         self.app.regenerate_colors();
@@ -196,9 +174,6 @@ impl AppHandler {
             self.app.current_pattern,
             &spawn_config,
         );
-
-        // Resize physics engine
-        self.app.physics.resize(self.app.particles.len());
 
         // Sync GPU buffers
         self.sync_buffers();

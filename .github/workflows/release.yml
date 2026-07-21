@@ -189,25 +189,47 @@ jobs:
           echo "version=$CARGO_VERSION" >> $GITHUB_OUTPUT
           echo "Cargo.toml version: $CARGO_VERSION"
 
+      - name: Check if version exists on crates.io
+        id: check_version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Checking if version $VERSION exists on crates.io..."
+
+          # Search for the exact version
+          if cargo search par-particle-life --limit 1 | grep -q "par-particle-life = \"$VERSION\""; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Warning: Version $VERSION already exists on crates.io"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Version $VERSION not found on crates.io, proceeding with publish"
+          fi
+
       - name: Run tests
+        if: steps.check_version.outputs.exists == 'false'
         run: cargo test --verbose
 
       - name: Dry run publish
+        if: steps.check_version.outputs.exists == 'false'
         run: cargo publish --dry-run
 
       - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }} || echo "Version may already exist on crates.io, continuing..."
-        continue-on-error: true
+        if: steps.check_version.outputs.exists == 'false'
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+      - name: Version already exists
+        if: steps.check_version.outputs.exists == 'true'
+        run: |
+          echo "::notice::Version ${{ steps.version.outputs.version }} already exists on crates.io. Skipping publish."
+
       - name: Discord notification
-        if: success()
+        if: success() && steps.check_version.outputs.exists == 'false'
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         uses: Ilshidur/action-discord@master
         with:
-          args: 'Published {{ EVENT_PAYLOAD.repository.name }} to crates.io successfully!'
+          args: 'Published {{ EVENT_PAYLOAD.repository.name }} v${{ steps.version.outputs.version }} to crates.io successfully!'
         continue-on-error: true
 
   # Create GitHub release

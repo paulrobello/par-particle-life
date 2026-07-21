@@ -1,9 +1,6 @@
 //! Main application state.
 
-use anyhow::Result;
-use winit::event_loop::{ControlFlow, EventLoop};
-
-use super::{AppConfig, handler::AppHandler};
+use super::AppConfig;
 use crate::generators::{
     colors::{Color, CustomPalette, PaletteType, generate_colors},
     custom::CustomGenerator,
@@ -11,8 +8,7 @@ use crate::generators::{
     rules::{RuleType, generate_rules},
 };
 use crate::simulation::{
-    InteractionMatrix, MatrixVariationConfig, Obstacle, Particle, PhysicsEngine, RadiusMatrix,
-    SimulationConfig,
+    InteractionMatrix, MatrixVariationConfig, Obstacle, Particle, RadiusMatrix, SimulationConfig,
 };
 
 /// Main application state.
@@ -35,8 +31,6 @@ pub struct App {
     pub radius_matrix: RadiusMatrix,
     /// Color palette for particle types.
     pub colors: Vec<Color>,
-    /// Physics engine.
-    pub physics: PhysicsEngine,
     /// Is simulation running?
     pub running: bool,
     /// Current rule type.
@@ -135,8 +129,6 @@ impl App {
 
         let particles = generate_positions(current_pattern, &spawn_config);
 
-        let physics = PhysicsEngine::new(particles.len());
-
         let type_masses = vec![1.0; num_types];
         let type_sizes = vec![1.0; num_types];
         let obstacles = Vec::new();
@@ -160,7 +152,6 @@ impl App {
             matrix_variation_time,
             radius_matrix,
             colors,
-            physics,
             running: true,
             current_rule,
             current_palette,
@@ -175,33 +166,88 @@ impl App {
         }
     }
 
-    /// Run the main application loop.
-    pub fn run(reset_config: bool) -> Result<()> {
-        log::info!("Par Particle Life starting...");
-
-        let event_loop = EventLoop::new()?;
-        event_loop.set_control_flow(ControlFlow::Poll);
-
-        let mut app_handler = AppHandler::new(reset_config);
-        event_loop.run_app(&mut app_handler)?;
-
-        Ok(())
+    /// Build a persisted-config snapshot from the current runtime state.
+    ///
+    /// Captures every field that should survive a close/restart: UI/window
+    /// preferences are preserved from `self.config` (they have no runtime
+    /// mirror), while physics/render/generator fields are mirrored from their
+    /// authoritative runtime location (`sim_config`, `current_rule`,
+    /// `matrix_variation`, etc.).
+    ///
+    /// This replaces the per-call site hand-mirror blocks (close handler,
+    /// preset-apply) that previously forgot to add new fields — the
+    /// `temperature` and `velocity_coupling` persistence bug (ARC-009) was
+    /// caused by exactly that drift. Adding a new tunable now means adding
+    /// one line here instead of editing 3–5 mirror blocks.
+    pub fn snapshot_config(&self) -> AppConfig {
+        let mut c = self.config.clone();
+        c.sim_num_particles = self.sim_config.num_particles;
+        c.sim_num_types = self.sim_config.num_types;
+        c.phys_force_factor = self.sim_config.force_factor;
+        c.phys_friction = self.sim_config.friction;
+        c.phys_repel_strength = self.sim_config.repel_strength;
+        c.phys_max_velocity = self.sim_config.max_velocity;
+        c.phys_boundary_mode = self.sim_config.boundary_mode;
+        c.phys_wall_repel_strength = self.sim_config.wall_repel_strength;
+        c.phys_mirror_wrap_count = self.sim_config.mirror_wrap_count;
+        c.phys_integration_method = self.sim_config.integration_method;
+        c.phys_temperature = self.sim_config.temperature;
+        c.phys_time_scale = self.sim_config.time_scale;
+        c.phys_velocity_coupling = self.sim_config.velocity_coupling;
+        c.gen_rule = self.current_rule;
+        c.gen_palette = self.current_palette;
+        c.gen_pattern = self.current_pattern;
+        c.gen_matrix_variation_enabled = self.matrix_variation.enabled;
+        c.gen_matrix_variation_mode = self.matrix_variation.mode;
+        c.gen_matrix_variation_amplitude = self.matrix_variation.amplitude;
+        c.gen_matrix_variation_speed = self.matrix_variation.speed;
+        c.render_particle_size = self.sim_config.particle_size;
+        c.render_background_color = self.sim_config.background_color;
+        c.render_glow_enabled = self.sim_config.enable_glow;
+        c.render_glow_intensity = self.sim_config.glow_intensity;
+        c.render_glow_size = self.sim_config.glow_size;
+        c.render_glow_steepness = self.sim_config.glow_steepness;
+        c.render_spatial_hash_cell_size = self.sim_config.spatial_hash_cell_size;
+        c
     }
 
-    /// Advance the simulation by one timestep.
-    pub fn step(&mut self, dt: f32) {
-        if !self.running {
-            return;
-        }
-
-        self.physics.step(
-            &mut self.particles,
-            &self.interaction_matrix,
-            &self.radius_matrix,
-            &self.type_masses,
-            &self.sim_config,
-            dt,
-        );
+    /// Apply a persisted-config snapshot back into runtime state.
+    ///
+    /// Inverse of [`snapshot_config`]: writes every field owned by `AppConfig`
+    /// into its runtime mirror. Used after loading a config snapshot from a
+    /// preset (the preset embeds `sim_config` already; this is for the
+    /// surviving `AppConfig`-level preferences on next save).
+    ///
+    /// [`snapshot_config`]: App::snapshot_config
+    pub fn apply_config(&mut self, c: AppConfig) {
+        self.config = c.clone();
+        self.sim_config.num_particles = c.sim_num_particles;
+        self.sim_config.num_types = c.sim_num_types;
+        self.sim_config.force_factor = c.phys_force_factor;
+        self.sim_config.friction = c.phys_friction;
+        self.sim_config.repel_strength = c.phys_repel_strength;
+        self.sim_config.max_velocity = c.phys_max_velocity;
+        self.sim_config.boundary_mode = c.phys_boundary_mode;
+        self.sim_config.wall_repel_strength = c.phys_wall_repel_strength;
+        self.sim_config.mirror_wrap_count = c.phys_mirror_wrap_count;
+        self.sim_config.integration_method = c.phys_integration_method;
+        self.sim_config.temperature = c.phys_temperature;
+        self.sim_config.time_scale = c.phys_time_scale;
+        self.sim_config.velocity_coupling = c.phys_velocity_coupling;
+        self.current_rule = c.gen_rule;
+        self.current_palette = c.gen_palette;
+        self.current_pattern = c.gen_pattern;
+        self.matrix_variation.enabled = c.gen_matrix_variation_enabled;
+        self.matrix_variation.mode = c.gen_matrix_variation_mode;
+        self.matrix_variation.amplitude = c.gen_matrix_variation_amplitude;
+        self.matrix_variation.speed = c.gen_matrix_variation_speed;
+        self.sim_config.particle_size = c.render_particle_size;
+        self.sim_config.background_color = c.render_background_color;
+        self.sim_config.enable_glow = c.render_glow_enabled;
+        self.sim_config.glow_intensity = c.render_glow_intensity;
+        self.sim_config.glow_size = c.render_glow_size;
+        self.sim_config.glow_steepness = c.render_glow_steepness;
+        self.sim_config.spatial_hash_cell_size = c.render_spatial_hash_cell_size;
     }
 
     /// Regenerate particles with the current pattern.
@@ -213,7 +259,6 @@ impl App {
             height: self.sim_config.world_size.y,
         };
         self.particles = generate_positions(self.current_pattern, &spawn_config);
-        self.physics.resize(self.particles.len());
     }
 
     /// Resize the particle list while preserving existing particle state.
@@ -239,7 +284,6 @@ impl App {
         }
 
         self.sim_config.num_particles = target_count;
-        self.physics.resize(target_len);
     }
 
     /// Regenerate the interaction matrix with the current rule type.
@@ -380,5 +424,81 @@ impl App {
 impl Default for App {
     fn default() -> Self {
         Self::new(false) // Default implies not resetting config
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::simulation::IntegrationMethod;
+
+    /// Regression test for the ARC-009 persistence bug: `temperature` and
+    /// `velocity_coupling` were omitted from the CloseRequested hand-mirror
+    /// block, so both reset to their defaults on every normal quit. With
+    /// `snapshot_config`/`apply_config` as the single source of truth, both
+    /// fields must survive a close→reopen (snapshot→apply) cycle even when
+    /// set to non-default values.
+    #[test]
+    fn snapshot_apply_round_trip_preserves_temperature_and_velocity_coupling() {
+        let mut app = App::new(true);
+
+        // Pick distinctive non-default values that would be caught by an
+        // equality check if they silently reverted to the defaults (0.0).
+        app.sim_config.temperature = 7.7;
+        app.sim_config.velocity_coupling = 0.42;
+        // Also exercise a non-float field so the test isn't overly narrow.
+        app.sim_config.integration_method = IntegrationMethod::VelocityVerlet;
+
+        // Snapshot the runtime state into the persisted config shape.
+        let snapshot = app.snapshot_config();
+        assert_eq!(snapshot.phys_temperature, 7.7);
+        assert_eq!(snapshot.phys_velocity_coupling, 0.42);
+        assert_eq!(
+            snapshot.phys_integration_method,
+            IntegrationMethod::VelocityVerlet
+        );
+
+        // Simulate close→reopen: a fresh App loads the snapshot from disk.
+        // Using apply_config pushes the snapshot back into runtime state,
+        // mirroring what App::new does inline on startup.
+        let mut reopened = App::new(true);
+        reopened.apply_config(snapshot);
+
+        assert_eq!(
+            reopened.sim_config.temperature, 7.7,
+            "temperature must survive snapshot→apply round-trip"
+        );
+        assert_eq!(
+            reopened.sim_config.velocity_coupling, 0.42,
+            "velocity_coupling must survive snapshot→apply round-trip"
+        );
+        assert_eq!(
+            reopened.sim_config.integration_method,
+            IntegrationMethod::VelocityVerlet,
+            "integration_method must survive snapshot→apply round-trip"
+        );
+    }
+
+    /// `snapshot_config` must be the inverse of `apply_config` for every
+    /// persisted field — otherwise the next save silently reverts runtime
+    /// edits. Round-trip a fully-populated snapshot through apply→snapshot.
+    #[test]
+    fn snapshot_apply_round_trip_is_inverse_for_all_persisted_fields() {
+        let mut app = App::new(true);
+        app.sim_config.temperature = 3.3;
+        app.sim_config.velocity_coupling = 0.27;
+        app.sim_config.force_factor = 2.5;
+        app.sim_config.friction = 0.7;
+        app.sim_config.max_velocity = 333.0;
+
+        let first = app.snapshot_config();
+        app.apply_config(first.clone());
+        let second = app.snapshot_config();
+
+        assert_eq!(first.phys_temperature, second.phys_temperature);
+        assert_eq!(first.phys_velocity_coupling, second.phys_velocity_coupling);
+        assert_eq!(first.phys_force_factor, second.phys_force_factor);
+        assert_eq!(first.phys_friction, second.phys_friction);
+        assert_eq!(first.phys_max_velocity, second.phys_max_velocity);
     }
 }

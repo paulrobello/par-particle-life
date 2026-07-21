@@ -31,7 +31,13 @@ pub(crate) enum RuleSelection {
 }
 
 /// Application handler for the winit event loop.
-pub(crate) struct AppHandler {
+///
+/// Public so the binary (`src/main.rs`) can construct it as part of the
+/// GUI runner that lives outside the library (ARC-004). The struct's fields
+/// remain crate-private — external code can build one via [`AppHandler::new`]
+/// and drive it via `winit::ApplicationHandler`, but cannot poke internal
+/// state directly.
+pub struct AppHandler {
     /// The application state.
     pub(crate) app: App,
     /// GPU context (created when window is available).
@@ -177,7 +183,12 @@ impl AppHandler {
         Ok(dir)
     }
 
-    pub(crate) fn new(reset_config: bool) -> Self {
+    /// Construct a new handler around a fresh [`App`].
+    ///
+    /// Public so the binary's `main` can build one as part of the GUI runner
+    /// (ARC-004 moved `App::run` out of the library). Library embedders do
+    /// not need this — they use [`App::new`] directly for headless access.
+    pub fn new(reset_config: bool) -> Self {
         let app = App::new(reset_config);
         let preset_list = Preset::list_presets().unwrap_or_default();
 

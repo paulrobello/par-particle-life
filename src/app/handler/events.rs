@@ -105,7 +105,9 @@ impl ApplicationHandler for AppHandler {
         match event {
             WindowEvent::CloseRequested => {
                 log::info!("Close requested, exiting...");
-                // Save UI states to app.config before saving the config
+                // UI panel open/closed state lives on AppHandler — push it into
+                // app.config before snapshotting so it survives alongside the
+                // runtime-mirrored sim/physics/generator fields.
                 self.app.config.ui_simulation_open = self.ui_simulation_open;
                 self.app.config.ui_physics_open = self.ui_physics_open;
                 self.app.config.ui_generators_open = self.ui_generators_open;
@@ -116,33 +118,12 @@ impl ApplicationHandler for AppHandler {
                 self.app.config.ui_keyboard_shortcuts_open = self.ui_keyboard_shortcuts_open;
                 self.app.config.ui_obstacles_open = self.ui_obstacles_open;
 
-                // Persist current settings
-                self.app.config.sim_num_particles = self.app.sim_config.num_particles;
-                self.app.config.sim_num_types = self.app.sim_config.num_types;
-                self.app.config.phys_force_factor = self.app.sim_config.force_factor;
-                self.app.config.phys_friction = self.app.sim_config.friction;
-                self.app.config.phys_repel_strength = self.app.sim_config.repel_strength;
-                self.app.config.phys_max_velocity = self.app.sim_config.max_velocity;
-                self.app.config.phys_boundary_mode = self.app.sim_config.boundary_mode;
-                self.app.config.phys_wall_repel_strength = self.app.sim_config.wall_repel_strength;
-                self.app.config.phys_mirror_wrap_count = self.app.sim_config.mirror_wrap_count;
-                self.app.config.phys_integration_method = self.app.sim_config.integration_method;
-                self.app.config.gen_rule = self.app.current_rule;
-                self.app.config.gen_palette = self.app.current_palette;
-                self.app.config.gen_pattern = self.app.current_pattern;
-                self.app.config.gen_matrix_variation_enabled = self.app.matrix_variation.enabled;
-                self.app.config.gen_matrix_variation_mode = self.app.matrix_variation.mode;
-                self.app.config.gen_matrix_variation_amplitude =
-                    self.app.matrix_variation.amplitude;
-                self.app.config.gen_matrix_variation_speed = self.app.matrix_variation.speed;
-                self.app.config.render_particle_size = self.app.sim_config.particle_size;
-                self.app.config.render_background_color = self.app.sim_config.background_color;
-                self.app.config.render_glow_enabled = self.app.sim_config.enable_glow;
-                self.app.config.render_glow_intensity = self.app.sim_config.glow_intensity;
-                self.app.config.render_glow_size = self.app.sim_config.glow_size;
-                self.app.config.render_glow_steepness = self.app.sim_config.glow_steepness;
-                self.app.config.render_spatial_hash_cell_size =
-                    self.app.sim_config.spatial_hash_cell_size;
+                // ARC-003/009: single-source-of-truth snapshot replaces the
+                // ~30-line hand-mirror block. Previously this forgot to mirror
+                // `phys_temperature` and `phys_velocity_coupling`, so both
+                // silently reset to their defaults on every normal quit.
+                let snapshot = self.app.snapshot_config();
+                self.app.config = snapshot;
 
                 if let Err(e) = self.app.config.save() {
                     log::error!("Failed to save app config: {}", e);

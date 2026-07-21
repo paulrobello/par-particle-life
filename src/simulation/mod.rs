@@ -5,7 +5,6 @@ mod game_of_life;
 mod matrix_variation;
 mod obstacle;
 mod particle;
-mod physics;
 mod spatial_hash;
 
 pub use boundary::BoundaryMode;
@@ -16,7 +15,6 @@ pub use particle::{
     InteractionMatrix, Particle, ParticlePosType, ParticlePosTypeHalf, ParticleVel,
     ParticleVelHalf, RadiusMatrix,
 };
-pub use physics::{PhysicsEngine, advance_particles, compute_forces_cpu};
 pub use spatial_hash::SpatialHash;
 
 use serde::{Deserialize, Serialize};

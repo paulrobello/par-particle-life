@@ -301,7 +301,6 @@ impl AppHandler {
             height: self.app.sim_config.world_size.y,
         };
         self.app.particles = generate_positions(self.app.current_pattern, &spawn_config);
-        self.app.physics.resize(self.app.particles.len());
 
         // Reset camera and brush state
         self.camera = crate::app::CameraState::default();

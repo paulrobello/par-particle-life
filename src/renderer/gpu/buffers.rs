@@ -1155,3 +1155,255 @@ impl SpatialHashBuffers {
         counts
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Expected declaration order of the SimParams fields, shared between
+    /// the Rust uniform (`SimParamsUniform`) and the WGSL `SimParams` struct
+    /// that is duplicated across seven shader files. The load-bearing
+    /// invariant is that every field has the same byte offset in both
+    /// representations — a single missed padding field or reorder silently
+    /// corrupts the sim as "bad physics" rather than crashing.
+    ///
+    /// Drives both the Rust offset assertions and the WGSL parse check below.
+    const EXPECTED_FIELDS: [&str; 20] = [
+        "num_particles",
+        "num_types",
+        "force_factor",
+        "friction",
+        "repel_strength",
+        "max_velocity",
+        "world_width",
+        "world_height",
+        "boundary_mode",
+        "wall_repel_strength",
+        "particle_size",
+        "dt",
+        "max_bin_density",
+        "neighbor_budget",
+        "velocity_coupling",
+        "temperature",
+        "frame_counter",
+        "num_obstacles",
+        "integration_method",
+        "_padding2",
+    ];
+
+    /// Assert each Rust field's byte offset matches the WGSL uniform layout
+    /// (4 bytes per field, no padding between fields — verified by the size
+    /// assertion below). The trailing `_padding2: u32` rounds the Rust struct
+    /// to 80 bytes, the 16-byte multiple required by WGSL uniform layout.
+    #[test]
+    fn sim_params_uniform_field_offsets_match_wgsl_layout() {
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, num_particles),
+            0,
+            "num_particles offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, num_types),
+            4,
+            "num_types offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, force_factor),
+            8,
+            "force_factor offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, friction),
+            12,
+            "friction offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, repel_strength),
+            16,
+            "repel_strength offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, max_velocity),
+            20,
+            "max_velocity offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, world_width),
+            24,
+            "world_width offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, world_height),
+            28,
+            "world_height offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, boundary_mode),
+            32,
+            "boundary_mode offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, wall_repel_strength),
+            36,
+            "wall_repel_strength offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, particle_size),
+            40,
+            "particle_size offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, dt),
+            44,
+            "dt offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, max_bin_density),
+            48,
+            "max_bin_density offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, neighbor_budget),
+            52,
+            "neighbor_budget offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, velocity_coupling),
+            56,
+            "velocity_coupling offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, temperature),
+            60,
+            "temperature offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, frame_counter),
+            64,
+            "frame_counter offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, num_obstacles),
+            68,
+            "num_obstacles offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, integration_method),
+            72,
+            "integration_method offset drifted"
+        );
+        assert_eq!(
+            core::mem::offset_of!(SimParamsUniform, _padding2),
+            76,
+            "_padding2 offset drifted"
+        );
+    }
+
+    /// Total struct size must be 80 bytes (WGSL uniform buffers require a
+    /// 16-byte multiple; 19 used fields = 76 bytes, padded to 80).
+    #[test]
+    fn sim_params_uniform_size_is_80_bytes() {
+        assert_eq!(
+            core::mem::size_of::<SimParamsUniform>(),
+            80,
+            "SimParamsUniform must be exactly 80 bytes (WGSL 16-byte uniform alignment)"
+        );
+    }
+
+    /// Each of the seven WGSL shader files that declare `struct SimParams`
+    /// must list every field in the same order as the Rust uniform. This
+    /// catches the silent-corruption class of bug where a field reorder or
+    /// missed padding in one shader makes the sim "look wrong" without
+    /// crashing.
+    #[test]
+    fn wgsl_sim_params_structs_match_rust_layout() {
+        let shaders: [(&str, &str); 7] = [
+            (
+                "particle_forces",
+                include_str!("../../../shaders/particle_forces.wgsl"),
+            ),
+            (
+                "particle_forces_binned",
+                include_str!("../../../shaders/particle_forces_binned.wgsl"),
+            ),
+            (
+                "particle_advance",
+                include_str!("../../../shaders/particle_advance.wgsl"),
+            ),
+            (
+                "particle_render",
+                include_str!("../../../shaders/particle_render.wgsl"),
+            ),
+            (
+                "particle_render_infinite",
+                include_str!("../../../shaders/particle_render_infinite.wgsl"),
+            ),
+            (
+                "particle_render_mirror",
+                include_str!("../../../shaders/particle_render_mirror.wgsl"),
+            ),
+            (
+                "particle_render_glow",
+                include_str!("../../../shaders/particle_render_glow.wgsl"),
+            ),
+        ];
+
+        for (name, source) in shaders {
+            let struct_body = extract_sim_params_struct(source)
+                .unwrap_or_else(|| panic!("`struct SimParams` not found in {name}.wgsl"));
+
+            let declared_fields: Vec<&str> =
+                struct_body.lines().filter_map(extract_field_name).collect();
+
+            assert_eq!(
+                declared_fields.len(),
+                EXPECTED_FIELDS.len(),
+                "{name}.wgsl declares {} SimParams fields, expected {}",
+                declared_fields.len(),
+                EXPECTED_FIELDS.len()
+            );
+
+            for (i, (actual, expected)) in declared_fields
+                .iter()
+                .zip(EXPECTED_FIELDS.iter())
+                .enumerate()
+            {
+                assert_eq!(
+                    actual, expected,
+                    "{name}.wgsl field #{i} is `{actual}`, expected `{expected}`",
+                );
+            }
+        }
+    }
+
+    /// Extract the body of `struct SimParams { ... }` from a WGSL source.
+    /// Returns `None` if the struct is not declared.
+    fn extract_sim_params_struct(source: &str) -> Option<&str> {
+        let start_marker = "struct SimParams";
+        let start = source.find(start_marker)?;
+        let open = source[start..].find('{')? + start;
+        let close = source[open..].find('}')? + open;
+        Some(&source[open + 1..close])
+    }
+
+    /// Pull the identifier before the `:` in a WGSL struct field line.
+    /// Skips blank lines, comments, and lines without a `:`.
+    fn extract_field_name(line: &str) -> Option<&str> {
+        // Strip line comments
+        let line = line.split("//").next()?.trim();
+        let colon = line.find(':')?;
+        let name = line[..colon].trim();
+        if name.is_empty() {
+            return None;
+        }
+        // Sanity check: identifier-like
+        if !name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        {
+            return None;
+        }
+        Some(name)
+    }
+}

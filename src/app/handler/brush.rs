@@ -61,7 +61,6 @@ impl AppHandler {
         self.app
             .particles
             .resize(new_count as usize, crate::simulation::Particle::default());
-        self.app.physics.resize(new_count as usize);
     }
 
     /// Erase particles within the brush radius.

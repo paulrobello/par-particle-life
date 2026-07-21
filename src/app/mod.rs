@@ -2,7 +2,7 @@
 
 mod config;
 mod gpu_state;
-pub(crate) mod handler;
+pub mod handler;
 mod input;
 mod preset;
 mod state;
