@@ -12,7 +12,7 @@ rust-version = "1.93"
 
 [dependencies]
 # GPU/Graphics
-wgpu = "29"
+wgpu = "30"
 winit = "0.30"
 
 # GUI
