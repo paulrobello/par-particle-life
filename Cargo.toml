@@ -46,7 +46,7 @@ clap = { version = "4", features = ["derive"] }
 # Image export
 image = "0.25"
 gif = "0.14"
-color_quant = "1.1"
+color_quant = "2.0"
 
 # Date/time for screenshots
 chrono = "0.4"
