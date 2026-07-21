@@ -6,10 +6,48 @@ name: Release and Deploy
 
 on:
   workflow_dispatch:
+    # ARC-046: gate manual releases to the default branch — only `main`
+    # may ship a release. (Tag-based triggers can be added later.)
+    branches:
+      - main
 
 permissions:
   contents: write
   id-token: write
+
+jobs:
+  # ARC-046: pre-flight — confirm CHANGELOG.md has a section for the
+  # version we are about to release, so a manual dispatch can never ship
+  # a release without corresponding release notes.
+  changelog-guard:
+    name: CHANGELOG / version cross-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+
+      - name: Read version from Cargo.toml
+        id: version
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[0].version')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Release version: $VERSION"
+
+      - name: Verify CHANGELOG.md contains matching section
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ! grep -qE "^## \[${VERSION}\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md is missing a \`## [${VERSION}]\` section for this release."
+            echo "Found these version headers in CHANGELOG.md:"
+            grep -nE '^## \[' CHANGELOG.md || echo "(none)"
+            exit 1
+          fi
+          echo "CHANGELOG.md has a section for ${VERSION}."
 
 jobs:
   # Build binaries for multiple platforms
@@ -17,6 +55,7 @@ jobs:
     name: Build binary - ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    needs: [changelog-guard]
     strategy:
       fail-fast: false
       matrix:
@@ -52,10 +91,10 @@ jobs:
             asset_name: par-particle-life-windows-x86_64.exe
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           targets: ${{ matrix.target }}
 
@@ -76,8 +115,9 @@ jobs:
           VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n1)
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
+      # ARC-030: --locked refuses to regenerate Cargo.lock at build time.
       - name: Build binary
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
@@ -159,11 +199,117 @@ jobs:
           cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} release-binaries/${{ matrix.asset_name }}
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary-${{ matrix.target }}
           path: release-binaries/${{ matrix.asset_name }}
           retention-days: 1
+
+  # ARC-029: sign and notarize the macOS .app bundles. Runs only on macOS
+  # runners, after the unsigned artifact has been uploaded. Requires the
+  # APPLE_ID_PASSWORD secret (app-specific password for notarytool) and a
+  # MACOS_CERTIFICATE (Developer ID Application .p12, base64) secret.
+  sign-and-notarize:
+    name: Sign & Notarize - ${{ matrix.name }}
+    runs-on: macos-latest
+    timeout-minutes: 25
+    needs: [build-binaries]
+    if: ${{ needs.build-binaries.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS x86_64
+            target: x86_64-apple-darwin
+            asset_name: par-particle-life-macos-x86_64.zip
+          - name: macOS ARM64
+            target: aarch64-apple-darwin
+            asset_name: par-particle-life-macos-aarch64.zip
+
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Download unsigned artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: unsigned
+
+      - name: Unzip, sign, notarize, staple, re-zip
+        env:
+          # Base64-encoded Developer ID Application .p12 (Application
+          # Developer ID: PAUL AARON ROBELLO (QMLVG482FY)).
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          TEAM_ID: QMLVG482FY
+        run: |
+          set -euo pipefail
+
+          # Skip cleanly if signing secrets are not configured (e.g. fork PR,
+          # dev environment). Production releases MUST configure these.
+          if [ -z "${APPLE_ID_PASSWORD}" ] || [ -z "${MACOS_CERTIFICATE}" ]; then
+            echo "::notice::macOS signing secrets not configured — publishing unsigned artifact."
+            mkdir -p signed
+            cp "unsigned/${{ matrix.asset_name }}" "signed/"
+            exit 0
+          fi
+
+          # Import the Developer ID certificate into a fresh keychain.
+          CERT_P12="$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PWD="$(uuidgen)"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERT_P12"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -u "$KEYCHAIN"
+          security import "$CERT_P12" -P "$MACOS_CERTIFICATE_PWD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN"
+
+          # Unzip the .app bundle.
+          WORK="$RUNNER_TEMP/bundle"
+          mkdir -p "$WORK"
+          unzip -o "unsigned/${{ matrix.asset_name }}" -d "$WORK"
+          APP_PATH="$WORK/par-particle-life.app"
+
+          # Hardened runtime + deep sign.
+          /usr/bin/codesign \
+            --deep --force \
+            --options runtime \
+            --timestamp \
+            --sign "Developer ID Application: PAUL AARON ROBELLO (QMLVG482FY)" \
+            "$APP_PATH"
+          /usr/bin/codesign --verify --strict --verbose=2 "$APP_PATH"
+
+          # Submit the zipped bundle to notarytool and block until verdict.
+          ZIP_FOR_NOTARY="$RUNNER_TEMP/${{ matrix.asset_name }}"
+          ( cd "$WORK" && ditto -c -k --keepParent par-particle-life.app "$ZIP_FOR_NOTARY" )
+          xcrun notarytool submit "$ZIP_FOR_NOTARY" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --wait
+
+          # Staple the notarization ticket back onto the .app.
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+
+          # Re-zip the signed+stapled bundle into the release artifact.
+          mkdir -p signed
+          ( cd "$WORK" && ditto -c -k --keepParent par-particle-life.app "signed/${{ matrix.asset_name }}" )
+
+          # Cleanup keychain.
+          security delete-keychain "$KEYCHAIN" || true
+
+      - name: Upload signed artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: signed/${{ matrix.asset_name }}
+          retention-days: 1
+          overwrite: true
 
   # Publish to crates.io
   publish-crates:
@@ -172,10 +318,12 @@ jobs:
     timeout-minutes: 15
     needs: [build-binaries]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          components: rustfmt, clippy
 
       - name: Install Linux dependencies
         run: |
@@ -204,17 +352,27 @@ jobs:
             echo "Version $VERSION not found on crates.io, proceeding with publish"
           fi
 
+      # ARC-050: a release cannot ship lint regressions — fail fast on
+      # formatting or clippy violations before publish.
+      - name: Verify formatting
+        if: steps.check_version.outputs.exists == 'false'
+        run: cargo fmt -- --check
+
+      - name: Run clippy
+        if: steps.check_version.outputs.exists == 'false'
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
       - name: Run tests
         if: steps.check_version.outputs.exists == 'false'
-        run: cargo test --verbose
+        run: cargo test --locked --verbose
 
       - name: Dry run publish
         if: steps.check_version.outputs.exists == 'false'
-        run: cargo publish --dry-run
+        run: cargo publish --locked --dry-run
 
       - name: Publish to crates.io
         if: steps.check_version.outputs.exists == 'false'
-        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -227,7 +385,8 @@ jobs:
         if: success() && steps.check_version.outputs.exists == 'false'
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        uses: Ilshidur/action-discord@master
+        # Ilshidur/action-discord — pinned to SHA of release 0.4.0 (ARC-031 / SEC-008).
+        uses: Ilshidur/action-discord@d2594079a10f1d6739ee50a2471f0ca57418b554 # 0.4.0
         with:
           args: 'Published {{ EVENT_PAYLOAD.repository.name }} v${{ steps.version.outputs.version }} to crates.io successfully!'
         continue-on-error: true
@@ -237,16 +396,16 @@ jobs:
     name: Create GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [build-binaries]
+    needs: [sign-and-notarize]
     permissions:
       contents: write
       id-token: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
 
       - name: Get version
         id: get_version
@@ -256,7 +415,7 @@ jobs:
           echo "Package version: $version"
 
       - name: Download binary artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: binary-*
           path: binaries

@@ -12,6 +12,39 @@ pub(crate) const MAX_PREFIX_PASSES: u32 = 32;
 // Clear + count + prefix passes + clear-sort + sort + forces + advance (each with start/end).
 pub(crate) const MAX_TIMESTAMP_QUERIES: u32 = (MAX_PREFIX_PASSES + 6) * 2;
 
+/// Read a `0`/`1`/`true`/`false` env var as a boolean. Missing or unrecognized
+/// values default to `false`.
+///
+/// Used to gate optional GPU readbacks that otherwise stall the main thread
+/// once per frame or once per 10 s (see ARC-023 / QA-004). Production builds
+/// run with the flags unset; developers opt in by setting them at launch.
+fn env_flag(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(v) => matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+        Err(_) => false,
+    }
+}
+
+/// Returns `true` when per-frame GPU timestamp query readback is enabled.
+///
+/// Off by default — the readback calls `device.poll(wait_indefinitely)` which
+/// serializes CPU and GPU every frame. Enable only when profiling the GPU
+/// pipeline (the HUD's GPU timings panel reads the same data).
+pub(crate) fn gpu_profiling_enabled() -> bool {
+    env_flag("PAR_PROFILE_GPU")
+}
+
+/// Returns `true` when the every-10-seconds metrics readback is enabled.
+///
+/// Off by default — `read_bin_counts` copies the entire bin-counts buffer and
+/// polls the device for completion, producing a visible hitch on high-FPS
+/// displays. The readback feeds a log line and a density heuristic that
+/// auto-tunes `spatial_hash_cell_size`; the user can still tune the slider
+/// manually when this is off.
+pub(crate) fn metrics_debug_enabled() -> bool {
+    env_flag("PAR_DEBUG_METRICS")
+}
+
 /// Cached bind groups for the spatial hash compute passes.
 ///
 /// These groups are rebuilt when buffer handles change or the number of

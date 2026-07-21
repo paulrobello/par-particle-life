@@ -20,10 +20,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
-    - uses: actions/checkout@v6
+    # actions/checkout v6 — SHA-pinned per ARC-031 / SEC-008.
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+    # dtolnay/rust-toolchain stable — SHA-pinned per ARC-031 / SEC-008.
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
 
     - name: Install Linux dependencies
       if: runner.os == 'Linux'
@@ -31,29 +33,31 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
 
+    # actions/cache v5 — SHA-pinned per ARC-031 / SEC-008.
     - name: Cache cargo registry
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Cache cargo index
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: ~/.cargo/git
         key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Cache target directory
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
+    # ARC-030: --locked refuses to regenerate Cargo.lock at build time.
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --locked --verbose
 
     - name: Build release
-      run: cargo build --release --verbose
+      run: cargo build --release --locked --verbose
 
   lint:
     name: Lint
@@ -61,10 +65,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
       with:
         components: rustfmt, clippy
 
@@ -77,4 +81,51 @@ jobs:
       run: cargo fmt -- --check
 
     - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: cargo clippy --all-targets --all-features --locked -- -D warnings
+
+  # ARC-026: enforce the declared MSRV (Cargo.toml `rust-version = "1.93"`).
+  # Uses the exact Rust version, not @stable, so a newer toolchain cannot
+  # silently introduce APIs unavailable at the declared MSRV.
+  msrv:
+    name: MSRV (1.93)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+    - name: Install Rust 1.93.0 (declared MSRV)
+      uses: dtolnay/rust-toolchain@1.93.0
+
+    - name: Install Linux dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+    - name: Verify build compiles at MSRV
+      run: cargo check --locked --all-targets
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+    - name: Install cargo-audit
+      # Pinned to commit SHA of taiki-e/install-action v2.84.0 (ARC-031 / SEC-008).
+      uses: taiki-e/install-action@a6b2e2dcd845ddd7f509ce4f3ed3d922b80cc5d9
+      with:
+        tool: cargo-audit
+
+    # The four --ignore IDs are transitive and not reachable from app input
+    # today (build-time via wayland/winit/image). Tracked with dated comments
+    # in deny.toml — re-evaluate when upstreams publish fixes.
+    - name: Run cargo audit
+      run: |
+        cargo audit --deny warnings \
+          --ignore RUSTSEC-2026-0195 \
+          --ignore RUSTSEC-2026-0194 \
+          --ignore RUSTSEC-2026-0192 \
+          --ignore RUSTSEC-2024-0436

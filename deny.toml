@@ -1,0 +1,55 @@
+# cargo-deny configuration
+# Docs: https://embarkstudios.github.io/cargo-deny/
+#
+# Run locally: cargo install cargo-deny && cargo deny check
+# CI uses `cargo audit` (see .github/workflows/ci.yml) for the advisory gate;
+# this file is the canonical source of truth for tracked advisories, the
+# license allowlist, and duplicate-version warnings.
+
+[advisories]
+# Fetch the advisory database from the canonical RustSec source.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Transitive advisories not reachable from app input today.
+# Verified 2026-07-20 against Cargo.lock (par-particle-life v0.3.0).
+# Re-evaluate when upstream winit / wayland / image publish fixed versions.
+ignore = [
+    # quick-xml 0.39.4 — pulled in build-time via wayland (winit -> ... ).
+    # Not in the runtime dependency closure of any code path that parses XML.
+    "RUSTSEC-2026-0195",  # memory-exhaustion DoS in NsReader
+    "RUSTSEC-2026-0194",  # quadratic attr-duplicate check
+    # ttf-parser 0.25.1 — transitive via winit; unmaintained advisory only.
+    "RUSTSEC-2026-0192",
+    # paste 1.0.15 — transitive via image; unmaintained advisory only.
+    "RUSTSEC-2024-0436",
+]
+yanked = "deny"
+
+[licenses]
+# Allow every license expression currently present in the dependency graph
+# (verified via `cargo metadata` 2026-07-20). Project itself is AGPL-3.0-or-later.
+allow = [
+    "0BSD",
+    "AGPL-3.0-or-later",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "NCSA",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+# Warn on multiple versions of the same crate — useful signal, not a hard fail.
+multiple-versions = "warn"
+wildcards = "warn"

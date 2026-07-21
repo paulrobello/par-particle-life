@@ -1,5 +1,6 @@
 //! Main application state.
 
+use super::error::AppError;
 use super::AppConfig;
 use crate::generators::{
     colors::{Color, CustomPalette, PaletteType, generate_colors},
@@ -12,47 +13,61 @@ use crate::simulation::{
 };
 
 /// Main application state.
+///
+/// Most fields are `pub(crate)` (ARC-014): handlers under `src/app/handler/`
+/// and the rest of the crate can read/write them freely, but downstream
+/// crates and the binary layer are expected to go through the intentional
+/// operations below (`regenerate_*`, `apply_config`, etc.) rather than mutate
+/// raw state. This lets future invariant checks (e.g. keep `type_masses.len()`
+/// in sync with `sim_config.num_types`) land without auditing every direct
+/// field write across the binary.
+///
+/// `sim_config` and `particles` remain `pub` for now because the integration
+/// test in `tests/enhancement_features.rs` mutates them directly to exercise
+/// `set_particle_count_preserving_existing`. Full privatization needs accessor
+/// methods (`sim_config_mut()` / `particles_mut()`) plus a coordinated test
+/// rewrite — deferred.
 pub struct App {
     /// Application configuration.
-    pub config: AppConfig,
+    pub(crate) config: AppConfig,
     /// Simulation configuration.
     pub sim_config: SimulationConfig,
     /// Particle data.
     pub particles: Vec<Particle>,
     /// Interaction matrix.
-    pub interaction_matrix: InteractionMatrix,
+    pub(crate) interaction_matrix: InteractionMatrix,
     /// Preserved base matrix used by time-varying matrix transforms.
-    pub matrix_variation_base: InteractionMatrix,
+    pub(crate) matrix_variation_base: InteractionMatrix,
     /// Time-varying interaction matrix settings.
-    pub matrix_variation: MatrixVariationConfig,
+    pub(crate) matrix_variation: MatrixVariationConfig,
     /// Elapsed variation time in seconds.
-    pub matrix_variation_time: f32,
+    pub(crate) matrix_variation_time: f32,
     /// Radius matrices.
-    pub radius_matrix: RadiusMatrix,
+    pub(crate) radius_matrix: RadiusMatrix,
     /// Color palette for particle types.
-    pub colors: Vec<Color>,
+    pub(crate) colors: Vec<Color>,
     /// Is simulation running?
-    pub running: bool,
+    pub(crate) running: bool,
     /// Current rule type.
-    pub current_rule: RuleType,
+    pub(crate) current_rule: RuleType,
     /// Current palette type.
-    pub current_palette: PaletteType,
+    pub(crate) current_palette: PaletteType,
     /// Current position pattern.
-    pub current_pattern: PositionPattern,
+    pub(crate) current_pattern: PositionPattern,
     /// Auto-scale radii with density (persisted setting).
-    pub auto_scale_radii: bool,
+    pub(crate) auto_scale_radii: bool,
     /// Per-type mass (higher = slower response to forces).
-    pub type_masses: Vec<f32>,
+    pub(crate) type_masses: Vec<f32>,
     /// Per-type size multiplier on global particle_size.
-    pub type_sizes: Vec<f32>,
+    pub(crate) type_sizes: Vec<f32>,
     /// Obstacle zones that deflect particles.
-    pub obstacles: Vec<Obstacle>,
+    pub(crate) obstacles: Vec<Obstacle>,
     /// User-defined custom rule generators.
-    pub custom_generators: Vec<CustomGenerator>,
+    pub(crate) custom_generators: Vec<CustomGenerator>,
     /// User-defined custom color palettes.
-    pub custom_palettes: Vec<CustomPalette>,
+    pub(crate) custom_palettes: Vec<CustomPalette>,
     /// Active custom palette, if one is selected or being edited.
-    pub active_custom_palette: Option<CustomPalette>,
+    pub(crate) active_custom_palette: Option<CustomPalette>,
 }
 
 impl App {
@@ -335,13 +350,16 @@ impl App {
     }
 
     /// Generate rules from a custom generator, with error handling.
-    pub fn generate_custom_rules(&mut self, index: usize) -> Result<InteractionMatrix, String> {
+    pub fn generate_custom_rules(
+        &mut self,
+        index: usize,
+    ) -> Result<InteractionMatrix, AppError> {
         let num_types = self.sim_config.num_types as usize;
         self.custom_generators
             .get_mut(index)
-            .ok_or_else(|| format!("Custom generator index {index} out of range"))?
+            .ok_or_else(|| AppError::Index(format!("Custom generator index {index} out of range")))?
             .generate(num_types)
-            .map_err(|e| e.to_string())
+            .map_err(|e| AppError::Generator(e.to_string()))
     }
 
     /// Resize per-type arrays (masses, sizes) to match current num_types.

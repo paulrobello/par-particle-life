@@ -144,10 +144,6 @@ impl AppHandler {
         particle_workgroups: u32,
         max_radius: f32,
     ) {
-        // Debug flag - set to true to enable logging (first frame only)
-        static DEBUG_ONCE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
-        let should_debug = DEBUG_ONCE.swap(false, std::sync::atomic::Ordering::SeqCst);
-
         // Update spatial params
         gpu.spatial_buffers
             .update_params(&gpu.context.queue, sim_config, max_radius);
@@ -165,14 +161,12 @@ impl AppHandler {
         let num_passes = gpu.spatial_bind_groups.pass_count;
         let offsets_in_a = gpu.spatial_bind_groups.offsets_in_a;
 
-        if should_debug {
-            log::info!(
-                "Spatial hash: {} bins, {} workgroups, {} prefix sum passes",
-                total_bins,
-                bin_workgroups,
-                num_passes
-            );
-        }
+        log::debug!(
+            "Spatial hash: {} bins, {} workgroups, {} prefix sum passes",
+            total_bins,
+            bin_workgroups,
+            num_passes
+        );
 
         // Create single encoder for all passes
         let mut encoder = gpu.context.create_encoder("Spatial Hash Compute");
@@ -384,202 +378,13 @@ impl AppHandler {
         gpu.context.submit(encoder.finish());
 
         // Read back GPU timings (best-effort; no-op if timestamps unsupported).
-        if gpu.timestamps_supported && gpu.timestamp_last_count > 0 {
+        // Gated behind PAR_PROFILE_GPU: the readback calls device.poll(wait),
+        // which serializes CPU and GPU every frame. Off by default.
+        if gpu.timestamps_supported
+            && gpu.timestamp_last_count > 0
+            && crate::app::gpu_state::gpu_profiling_enabled()
+        {
             gpu.fetch_gpu_timings();
         }
-    }
-
-    /// Run GPU compute using spatial hashing O(n*k) algorithm on a shared encoder.
-    /// Reads from current_particles, writes to next_particles.
-    /// All passes are added to the same encoder - no individual submits.
-    /// NOTE: This version has synchronization issues - use run_gpu_compute_spatial_with_barriers instead.
-    #[allow(dead_code)]
-    fn run_gpu_compute_spatial_on_encoder(
-        encoder: &mut wgpu::CommandEncoder,
-        gpu: &mut GpuState,
-        sim_config: &SimulationConfig,
-        particle_workgroups: u32,
-        max_radius: f32,
-    ) {
-        // Update spatial params
-        gpu.spatial_buffers
-            .update_params(&gpu.context.queue, sim_config, max_radius);
-
-        let total_bins = gpu.spatial_buffers.total_bins_with_end();
-        let bin_workgroups = total_bins.div_ceil(256);
-        let num_passes = gpu.spatial_buffers.prefix_sum_passes();
-
-        // Read from current_particles (input)
-        let pos_in = gpu.buffers.current_pos_type();
-
-        // Phase 1: Clear bin counts (buffer A)
-        let clear_bind_group = gpu.spatial_pipelines.create_clear_bind_group(
-            &gpu.context.device,
-            &gpu.spatial_buffers,
-            true, // buffer A
-        );
-
-        // Phase 2: Count particles per bin (reads from input)
-        let count_bind_group = gpu.spatial_pipelines.create_count_bind_group(
-            &gpu.context.device,
-            pos_in,
-            &gpu.spatial_buffers,
-        );
-
-        // Clear bins pass
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Bin Clear Pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&gpu.spatial_pipelines.clear_pipeline);
-            pass.set_bind_group(0, &clear_bind_group, &[]);
-            pass.dispatch_workgroups(bin_workgroups, 1, 1);
-        }
-
-        // Count pass
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Bin Count Pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&gpu.spatial_pipelines.count_pipeline);
-            pass.set_bind_group(0, &count_bind_group, &[]);
-            pass.dispatch_workgroups(particle_workgroups, 1, 1);
-        }
-
-        // Phase 3: Prefix sum (multiple passes) - all in same encoder
-        // We ping-pong between buffer A and B
-        let mut src_is_a = true;
-
-        // Use pre-allocated step size uniform buffers for each pass.
-        assert!(
-            (num_passes as usize) <= gpu.spatial_buffers.step_size_uniforms.len(),
-            "Not enough step_size_uniforms: need {} but have {}",
-            num_passes,
-            gpu.spatial_buffers.step_size_uniforms.len()
-        );
-
-        for pass_idx in 0..num_passes {
-            let (source, dest) = if src_is_a {
-                (
-                    &gpu.spatial_buffers.bin_counts_a,
-                    &gpu.spatial_buffers.bin_counts_b,
-                )
-            } else {
-                (
-                    &gpu.spatial_buffers.bin_counts_b,
-                    &gpu.spatial_buffers.bin_counts_a,
-                )
-            };
-
-            let step_size_buffer = &gpu.spatial_buffers.step_size_uniforms[pass_idx as usize];
-
-            let prefix_bind_group = gpu.spatial_pipelines.create_prefix_sum_bind_group(
-                &gpu.context.device,
-                source,
-                dest,
-                step_size_buffer,
-            );
-
-            {
-                let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: Some("Prefix Sum Pass"),
-                    timestamp_writes: None,
-                });
-                pass.set_pipeline(&gpu.spatial_pipelines.prefix_sum_pipeline);
-                pass.set_bind_group(0, &prefix_bind_group, &[]);
-                pass.dispatch_workgroups(bin_workgroups, 1, 1);
-            }
-
-            src_is_a = !src_is_a;
-        }
-
-        // Track which buffer has the final prefix sum result
-        gpu.spatial_buffers.current_offset_buffer = if src_is_a { 0 } else { 1 };
-
-        // Phase 4: Clear bin counts for sort (in the OTHER buffer from offsets)
-        let clear_for_sort_bind_group = gpu.spatial_pipelines.create_clear_bind_group(
-            &gpu.context.device,
-            &gpu.spatial_buffers,
-            !src_is_a, // The OTHER buffer
-        );
-
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Pre-Sort Clear Pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&gpu.spatial_pipelines.clear_pipeline);
-            pass.set_bind_group(0, &clear_for_sort_bind_group, &[]);
-            pass.dispatch_workgroups(bin_workgroups, 1, 1);
-        }
-
-        // Phase 5: Sort particles by bin (reads from input)
-        let sort_bind_group = gpu.spatial_pipelines.create_sort_bind_group(
-            &gpu.context.device,
-            pos_in,
-            gpu.buffers.next_pos_type(),
-            gpu.buffers.current_velocities(),
-            gpu.buffers.next_velocities(),
-            &gpu.spatial_buffers,
-            src_is_a,  // offset buffer
-            !src_is_a, // count buffer (cleared above)
-        );
-
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Bin Sort Pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&gpu.spatial_pipelines.sort_pipeline);
-            pass.set_bind_group(0, &sort_bind_group, &[]);
-            pass.dispatch_workgroups(particle_workgroups, 1, 1);
-        }
-
-        // Phase 6: Compute forces using binned approach
-        let vel_out = gpu.buffers.next_velocities();
-        let pos_out = gpu.buffers.next_pos_type();
-
-        let forces_bind_group = gpu.spatial_pipelines.create_forces_bind_group(
-            &gpu.context.device,
-            vel_out,
-            pos_out,
-            &gpu.buffers,
-            &gpu.spatial_buffers,
-        );
-
-        let advance_bind_group = gpu.compute.create_advance_bind_group(
-            &gpu.context.device,
-            pos_out,
-            vel_out,
-            &gpu.buffers.params,
-            &gpu.brush_pipelines.brush_buffer,
-            &gpu.buffers.obstacles,
-            &gpu.buffers.velocity_scratch,
-        );
-
-        // Binned force computation
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Binned Forces Pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&gpu.spatial_pipelines.forces_pipeline);
-            pass.set_bind_group(0, &forces_bind_group, &[]);
-            pass.dispatch_workgroups(particle_workgroups, 1, 1);
-        }
-
-        // Advance pass
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Advance Pass"),
-                timestamp_writes: None,
-            });
-            pass.set_pipeline(&gpu.compute.advance_pipeline);
-            pass.set_bind_group(0, &advance_bind_group, &[]);
-            pass.dispatch_workgroups(particle_workgroups, 1, 1);
-        }
-        // No submit - encoder will be submitted by caller
     }
 }

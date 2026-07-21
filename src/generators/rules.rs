@@ -8,6 +8,7 @@ use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
+use crate::generators::seeded_rng;
 use crate::simulation::InteractionMatrix;
 
 /// Types of rule generators available.
@@ -141,18 +142,6 @@ impl RuleType {
     }
 }
 
-/// Rule generator trait for creating interaction matrices.
-pub trait RuleGenerator {
-    /// Generate an interaction matrix of the given size.
-    fn generate(&self, num_types: usize) -> InteractionMatrix;
-}
-
-impl RuleGenerator for RuleType {
-    fn generate(&self, num_types: usize) -> InteractionMatrix {
-        generate_rules(*self, num_types)
-    }
-}
-
 /// Generate an interaction matrix using the specified rule type.
 pub fn generate_rules(rule_type: RuleType, num_types: usize) -> InteractionMatrix {
     if num_types == 0 {
@@ -208,7 +197,7 @@ pub fn generate_rules(rule_type: RuleType, num_types: usize) -> InteractionMatri
 
 /// Random matrix with values in [-1, 1).
 fn random_generator(n: usize) -> InteractionMatrix {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut matrix = InteractionMatrix::new(n);
     for val in &mut matrix.data {
         *val = rng.random::<f32>() * 2.0 - 1.0;
@@ -936,7 +925,7 @@ fn drifted_patchwork_generator(n: usize) -> InteractionMatrix {
 
 /// Block-Diagonal: alliance groups with positive intra-block, negative inter-block.
 fn block_diagonal_generator(n: usize) -> InteractionMatrix {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut matrix = InteractionMatrix::new(n);
 
     let num_blocks = if n <= 4 { 2 } else { 3 };
@@ -964,7 +953,7 @@ fn block_diagonal_generator(n: usize) -> InteractionMatrix {
 
 /// Cyclic Pursuit: each type chases the next in a cycle.
 fn cyclic_pursuit_generator(n: usize) -> InteractionMatrix {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut matrix = InteractionMatrix::new(n);
 
     if n < 3 {
@@ -993,7 +982,7 @@ fn cyclic_pursuit_generator(n: usize) -> InteractionMatrix {
 
 /// Random Sparse: ~70% zero cells, rest random [-1, 1].
 fn random_sparse_generator(n: usize) -> InteractionMatrix {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut matrix = InteractionMatrix::new(n);
 
     for i in 0..n {

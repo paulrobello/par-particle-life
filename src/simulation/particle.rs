@@ -6,11 +6,14 @@ use serde::{Deserialize, Serialize};
 
 /// A single particle in the simulation.
 ///
-/// The struct is aligned to 48 bytes to match WGSL storage buffer layout.
-/// In WGSL, vec3<u32> has 16-byte alignment, which causes padding after
-/// particle_type, making the total struct size 48 bytes.
-/// Position and velocity are stored as 2D vectors, with the particle type
-/// indicating which species/color the particle belongs to.
+/// CPU-side interchange type only — never uploaded to the GPU as an AoS blob.
+/// The GPU storage hot path uses the SoA types `ParticlePosType`, `ParticleVel`,
+/// and `ParticleVelHalf` (see below), each of which carries its own
+/// `#[repr(C, align(...))]` layout. `Particle` is `repr(C, align(16))` with
+/// explicit padding to 32 bytes so that `Vec<Particle>` is 16-byte aligned for
+/// SIMD-friendly access; the size is locked by the static assertion at the end
+/// of this file. Position and velocity are stored as 2D vectors, with the
+/// particle type indicating which species/color the particle belongs to.
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C, align(16))]
 pub struct Particle {
@@ -24,13 +27,18 @@ pub struct Particle {
     pub vy: f32,
     /// Particle type/species index (0 to num_types-1).
     pub particle_type: u32,
-    /// Padding after particle_type to align _padding2 to 16 bytes.
-    pub _padding1: [u32; 3],
-    /// Additional padding to match WGSL vec3<u32> at 16-byte alignment.
-    /// In WGSL storage buffers, vec3<u32> requires 16-byte alignment,
-    /// so it starts at offset 32, making total struct size 48 bytes.
-    pub _padding2: [u32; 4],
+    /// Explicit tail padding rounding the struct to the 16-byte alignment
+    /// required by `repr(align(16))`. Carries no semantic meaning; the SoA
+    /// GPU types are the source of truth for storage-buffer layout.
+    pub _padding: [u32; 3],
 }
+
+// Lock the layout: 5 used fields (20 bytes) + 12 bytes tail padding = 32 bytes.
+// Drop this assertion only if you are intentionally changing `Particle`'s
+// CPU-side stride and have audited every allocator / cast site.
+const _: () = assert!(std::mem::size_of::<Particle>() == 32);
+const _: () = assert!(std::mem::align_of::<Particle>() == 16);
+const _: () = assert!(std::mem::offset_of!(Particle, particle_type) == 16);
 
 impl Default for Particle {
     fn default() -> Self {
@@ -40,8 +48,7 @@ impl Default for Particle {
             vx: 0.0,
             vy: 0.0,
             particle_type: 0,
-            _padding1: [0; 3],
-            _padding2: [0; 4],
+            _padding: [0; 3],
         }
     }
 }
@@ -55,8 +62,7 @@ impl Particle {
             vx: 0.0,
             vy: 0.0,
             particle_type,
-            _padding1: [0; 3],
-            _padding2: [0; 4],
+            _padding: [0; 3],
         }
     }
 
@@ -68,8 +74,7 @@ impl Particle {
             vx,
             vy,
             particle_type,
-            _padding1: [0; 3],
-            _padding2: [0; 4],
+            _padding: [0; 3],
         }
     }
 

@@ -130,33 +130,6 @@ impl BrushState {
     }
 }
 
-/// Mouse button state.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct MouseState {
-    pub position: Vec2,
-    pub left_pressed: bool,
-    pub right_pressed: bool,
-    pub middle_pressed: bool,
-}
-
-/// Keyboard modifier state.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ModifierState {
-    pub shift: bool,
-    pub ctrl: bool,
-    pub alt: bool,
-}
-
-/// Input state for the application.
-#[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
-pub struct InputState {
-    pub mouse: MouseState,
-    pub modifiers: ModifierState,
-}
-
 /// Camera state for pan and zoom.
 #[derive(Debug, Clone, Copy)]
 pub struct CameraState {

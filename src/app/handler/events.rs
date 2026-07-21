@@ -56,13 +56,28 @@ impl ApplicationHandler for AppHandler {
                 window_attrs = window_attrs.with_window_icon(Some(icon));
             }
 
-            let window = Arc::new(
-                event_loop
-                    .create_window(window_attrs)
-                    .expect("Failed to create window"),
-            );
+            // ARC-013: window creation failure used to `.expect`-panic. The
+            // winit `ApplicationHandler::resumed` signature returns `()`, so
+            // we cannot `?`-propagate; instead log + exit the loop cleanly so
+            // the user sees an error message instead of an unfriendly abort.
+            let window = match event_loop.create_window(window_attrs) {
+                Ok(w) => Arc::new(w),
+                Err(e) => {
+                    log::error!(
+                        "Failed to create window: {e}. Exiting event loop."
+                    );
+                    event_loop.exit();
+                    return;
+                }
+            };
 
-            self.init_gpu(window);
+            // ARC-013: GPU init failures used to `.expect`-panic inside
+            // `init_gpu`. Now they propagate as `AppError`; log + exit
+            // cleanly instead of bringing down the whole process.
+            if let Err(e) = self.init_gpu(window) {
+                log::error!("GPU initialization failed: {e}. Exiting event loop.");
+                event_loop.exit();
+            }
         }
     }
 

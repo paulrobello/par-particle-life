@@ -75,17 +75,11 @@ impl AppHandler {
                 gpu.mirror_bind_group = new_mirror_bind_group;
                 gpu.infinite_bind_group = new_infinite_bind_group;
 
-                // Sync obstacles to new buffers
+                // Sync obstacles to new buffers (update_obstacles sets num_obstacles internally)
                 let obs_data: Vec<crate::simulation::ObstacleData> =
                     self.app.obstacles.iter().map(|o| o.into()).collect();
-                gpu.buffers.num_obstacles = self.app.obstacles.len() as u32;
-                if !obs_data.is_empty() {
-                    gpu.buffers.update_obstacles(
-                        &gpu.context.queue,
-                        &obs_data,
-                        gpu.buffers.num_obstacles,
-                    );
-                }
+                gpu.buffers
+                    .update_obstacles(&gpu.context.queue, &obs_data);
 
                 // Always invalidate spatial bind groups since they reference sim_buffers
                 // which were just recreated above
@@ -245,15 +239,12 @@ impl AppHandler {
     }
 
     pub(crate) fn sync_obstacles(&mut self) {
-        if let Some(gpu) = &self.gpu {
+        if let Some(gpu) = &mut self.gpu {
             let obs_data: Vec<crate::simulation::ObstacleData> =
                 self.app.obstacles.iter().map(|o| o.into()).collect();
-            let count = obs_data.len() as u32;
+            // update_obstacles sets gpu.buffers.num_obstacles internally.
             gpu.buffers
-                .update_obstacles(&gpu.context.queue, &obs_data, count);
-        }
-        if let Some(gpu) = &mut self.gpu {
-            gpu.buffers.num_obstacles = self.app.obstacles.len() as u32;
+                .update_obstacles(&gpu.context.queue, &obs_data);
         }
     }
 

@@ -1,0 +1,6 @@
+# rustfmt configuration.
+# Matches the project's existing formatting (Rust 2024 edition defaults).
+# Kept intentionally minimal: setting only `edition` avoids reformatting
+# existing code while making rustfmt's edition explicit and stable across
+# toolchain versions.
+edition = "2024"

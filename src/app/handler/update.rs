@@ -77,8 +77,17 @@ impl AppHandler {
         }
 
         // --- Start of Logging and Dynamic Adjustment Block (Moved to End) ---
-        // Periodic metrics logging (every 10 seconds)
-        if now.duration_since(self.last_log_time).as_secs_f32() >= 10.0 {
+        // Periodic metrics logging (every 10 seconds).
+        //
+        // Gated behind PAR_DEBUG_METRICS=1: the readback path
+        // (spatial_buffers.read_bin_counts) copies the entire bin-counts
+        // buffer to a fresh staging buffer and calls device.poll(wait),
+        // producing a visible once-every-10-seconds hitch even on fast
+        // displays. Off by default; enable when profiling density or
+        // debugging the spatial-hash auto-tune heuristic.
+        if crate::app::gpu_state::metrics_debug_enabled()
+            && now.duration_since(self.last_log_time).as_secs_f32() >= 10.0
+        {
             let mut density_info = String::from("Density: N/A");
             let mut timings_info = String::from("Timings: N/A");
 

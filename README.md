@@ -1,9 +1,9 @@
 # Par Particle Life
 
 [![Crates.io](https://img.shields.io/crates/v/par-particle-life)](https://crates.io/crates/par-particle-life)
-![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
+![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue.svg)
 ![Runs on Linux | macOS | Windows](https://img.shields.io/badge/runs%20on-Linux%20%7C%20macOS%20%7C%20Windows-blue)
-![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)
+![Rust](https://img.shields.io/badge/rust-1.93%2B-orange.svg)
 
 A high-performance, cross-platform GPU-accelerated particle life simulation built with Rust and WebGPU. Watch emergent life-like behaviors arise from simple particle interaction rules.
 
@@ -31,9 +31,9 @@ See the [Configuration Guide](docs/CONFIGURATION.md) for detailed setup instruct
 - **Spatial Hashing** - O(n*k) neighbor queries instead of O(n²)
 - **GPU-Driven Drawing** - Draw brush spawns particles directly on GPU, no CPU readback
 - **Particle Count Hot-Swap** - Change particle count without resetting the simulation
-- **31 Rule Generators** - Random, Symmetric, Snake, Rock-Paper-Scissors, and more
+- **34 Rule Generators** - Random, Symmetric, Snake, Rock-Paper-Scissors, BlockDiagonal, CyclicPursuit, RandomSparse, and more
 - **37 Color Palettes** - Rainbow, Pastel, CyberNeon, Aurora, and more
-- **28 Spawn Patterns** - Disk, Spiral, Grid, Yin-Yang, and more
+- **31 Spawn Patterns** - Disk, Spiral, Grid, Yin-Yang, Linear/Radial/Angular Gradient, and more
 - **4 Boundary Modes** - Repel, Wrap, Mirror Wrap, Infinite Tiling
 - **Real-time Adjustment** - Modify all parameters while simulation runs
 - **Interactive Brushes** - Draw, Erase, Attract, Repel particles
@@ -67,10 +67,11 @@ See [Generator Reference](docs/GENERATORS.md) for complete generator documentati
 
 ## Generators
 
-### Interaction Rules (31)
+### Interaction Rules (34)
 **Chaos:** Random, RandomSymmetric, RandomBiased
 **Structured:** Chains, Snake, RockPaperScissors, Predator-Prey
 **Social:** Tribes, Flocking, Segregation, Cooperation
+**0.3.0 additions:** BlockDiagonal, CyclicPursuit, RandomSparse
 **And more:** Symbiosis, Parasitism, Hierarchy, Crystals...
 
 ### Color Palettes (37)
@@ -78,9 +79,10 @@ See [Generator Reference](docs/GENERATORS.md) for complete generator documentati
 **Themed:** CyberNeon, Aurora, Sunset, Ocean
 **Scientific:** Viridis, Plasma, Magma, Spectral
 
-### Spawn Patterns (28)
+### Spawn Patterns (31)
 **Geometric:** Disk, Ring, Grid, Spiral
 **Organic:** Galaxy, Clusters, Noise
+**Gradient (0.3.0):** LinearGradient, RadialGradient, AngularGradient
 **Fun:** Yin-Yang, Hearts, DNA Helix
 
 ## Documentation
@@ -107,7 +109,7 @@ cargo install par-particle-life
 par-particle-life
 ```
 
-Requires Rust 1.88+. Install from [rustup.rs](https://rustup.rs/).
+Requires Rust 1.93+. Install from [rustup.rs](https://rustup.rs/).
 
 ### Pre-built Binaries
 
@@ -157,6 +159,21 @@ make lint        # Run linter
 make checkall    # Run all checks
 ```
 
+### Command-Line Flags
+
+The `par-particle-life` binary uses clap and exposes a single flag:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--reset-config` | `false` | Reset the persisted `AppConfig` to defaults on startup, then run normally. Use this if a corrupted config prevents launch. |
+
+```bash
+# Discard any saved config and start fresh
+par-particle-life --reset-config
+```
+
+The flag is parsed only by the binary; the library does not see it. See [Configuration Guide](docs/CONFIGURATION.md) for what the config controls.
+
 ### Key Bindings
 
 | Shortcut | Action |
@@ -166,7 +183,8 @@ make checkall    # Run all checks
 | **M** | Generate new interaction rules |
 | **H** | Toggle UI visibility |
 | **C** | Reset camera (zoom/pan) |
-| **F11** | Start/stop video recording |
+| **F5** | Start/stop video recording |
+| **F11** | Toggle fullscreen |
 | **F12** | Save screenshot (PNG) |
 | **Escape** | Quit application |
 
@@ -202,7 +220,7 @@ Cross-platform compatibility through WebGPU (wgpu-rs).
 
 ## Technology
 
-- **Rust** 1.88+ - Core implementation
+- **Rust** 1.93+ - Core implementation
 - **wgpu** - Cross-platform GPU API (WebGPU)
 - **winit** - Window creation and event handling
 - **egui** - Immediate mode GUI
@@ -222,15 +240,15 @@ graph TB
     end
 
     subgraph "Simulation Core"
-        Physics[Physics Engine]
+        Physics[GPU Compute Shaders]
         Spatial[Spatial Hash]
         Particles[Particle Data]
     end
 
     subgraph "Generators"
-        Rules[31 Rule Generators]
+        Rules[34 Rule Generators]
         Colors[37 Color Generators]
-        Positions[28 Position Generators]
+        Positions[31 Position Generators]
     end
 
     subgraph "GPU Rendering"

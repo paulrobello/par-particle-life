@@ -7,6 +7,7 @@ use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
 
+use crate::generators::seeded_rng;
 use crate::simulation::Particle;
 
 /// Configuration for spawning particles.
@@ -167,6 +168,10 @@ impl PositionPattern {
     /// Get the required number of types for this pattern, if fixed.
     /// Returns `Some(n)` if the pattern requires exactly n types to look correct,
     /// or `None` if the pattern adapts to any number of types.
+    ///
+    /// Advisory only (ARC-039): the UI surfaces this so the user knows a
+    /// pattern looks best at the suggested count, but the spawn path does
+    /// not enforce it — `num_types` is honoured as-is at generation time.
     pub fn required_types(&self) -> Option<usize> {
         match self {
             // These patterns use exactly 2 types (0 and 1)
@@ -228,10 +233,36 @@ fn create_particle(x: f32, y: f32, particle_type: u32) -> Particle {
     Particle::new(x, y, particle_type)
 }
 
+/// Split `total` into `buckets` whole counts as evenly as possible.
+///
+/// The first `total % buckets` buckets receive one extra item so the sum of
+/// the returned counts is exactly `total` (when `buckets <= total`; otherwise
+/// the trailing buckets are zero). Replaces the ~14 hand-rolled
+/// `per_X + remainder` dances that previously peppered the per-type spawn
+/// loops (ARC-038).
+fn bucket_counts(total: usize, buckets: usize) -> Vec<usize> {
+    if buckets == 0 {
+        return Vec::new();
+    }
+    let per = total / buckets;
+    let mut rem = total % buckets;
+    (0..buckets)
+        .map(|_| {
+            let c = per + if rem > 0 {
+                rem -= 1;
+                1
+            } else {
+                0
+            };
+            c
+        })
+        .collect()
+}
+
 // === Generator Implementations ===
 
 fn random_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let mut t = 0u32;
 
@@ -246,7 +277,7 @@ fn random_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn disk_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -266,7 +297,7 @@ fn disk_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn ring_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -289,7 +320,7 @@ fn ring_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn rings_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -325,7 +356,7 @@ fn rings_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn spiral_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -350,7 +381,7 @@ fn spiral_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn line_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let l = config.width * 0.92;
     let thick = config.height * 0.10;
@@ -375,24 +406,17 @@ fn line_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn rainbow_disk_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
     let r = 0.46 * config.width.min(config.height);
     let rot = rng.random::<f32>() * TAU;
     let sector = TAU / config.num_types.max(1) as f32;
-    let per_type = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
-
-    for t in 0..config.num_types {
-        let count = per_type
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (t, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
         let th0 = rot + t as f32 * sector;
 
         for j in 0..count {
@@ -408,7 +432,7 @@ fn rainbow_disk_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn rainbow_ring_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -416,17 +440,10 @@ fn rainbow_ring_generator(config: &SpawnConfig) -> Vec<Particle> {
     let thick = r * 0.2;
     let rot = rng.random::<f32>() * TAU;
     let sector = TAU / config.num_types.max(1) as f32;
-    let per_type = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
-
-    for t in 0..config.num_types {
-        let count = per_type
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (t, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
         let th0 = rot + t as f32 * sector;
 
         for j in 0..count {
@@ -442,29 +459,23 @@ fn rainbow_ring_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn rainbow_rings_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
     let max_r = 0.46 * config.width.min(config.height);
     let thick = 0.02 * max_r;
-    let per_ring = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
 
-    for ring in 0..config.num_types {
+    for (ring, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
         let f = if config.num_types == 1 {
             0.5
         } else {
             0.23 + 0.69 * ring as f32 / (config.num_types - 1) as f32
         };
         let r = f * max_r;
-        let count = per_ring
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
 
         for j in 0..count {
             let th = TAU * j as f32 / count as f32 + rng.random::<f32>() * 0.1;
@@ -479,7 +490,7 @@ fn rainbow_rings_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn rainbow_spiral_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -503,7 +514,7 @@ fn rainbow_spiral_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn rainbow_line_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let l = config.width * 0.92;
     let thick = config.height * 0.10;
@@ -511,17 +522,10 @@ fn rainbow_line_generator(config: &SpawnConfig) -> Vec<Particle> {
     let cy = config.height * 0.5;
     let x_start = cx - l * 0.5;
     let seg_w = l / config.num_types as f32;
-    let per_seg = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
-
-    for t in 0..config.num_types {
-        let count = per_seg
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (t, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
         let x0 = x_start + t as f32 * seg_w;
 
         for j in 0..count {
@@ -535,20 +539,13 @@ fn rainbow_line_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn stripes_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let vertical = rng.random::<bool>();
-    let per_type = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
-
-    for t in 0..config.num_types {
-        let count = per_type
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (t, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
 
         for _ in 0..count {
             let (x, y) = if vertical {
@@ -627,23 +624,16 @@ fn grid_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn wavy_bands_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let seg_h = config.height / config.num_types as f32;
     let amp = 0.06 * config.height;
     let kx = (TAU / config.width) * (1.0 + (config.num_types % 3) as f32);
     let base_phase = rng.random::<f32>() * TAU;
-    let per_type = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
-
-    for t in 0..config.num_types {
-        let count = per_type
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (t, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
         let y0 = (t as f32 + 0.5) * seg_h;
         let phase = base_phase + t as f32 * 0.7;
 
@@ -661,7 +651,7 @@ fn wavy_bands_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn simple_flower_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let petals = rng.random_range(2..=8);
     let phase = rng.random::<f32>() * TAU;
@@ -687,7 +677,7 @@ fn simple_flower_generator(config: &SpawnConfig) -> Vec<Particle> {
 
 fn chromatic_flower_generator(config: &SpawnConfig) -> Vec<Particle> {
     // Simplified version - similar to simple_flower but with chromatic assignment
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let petals = rng.random_range(2..=7);
     let phase = rng.random::<f32>() * TAU;
@@ -695,17 +685,10 @@ fn chromatic_flower_generator(config: &SpawnConfig) -> Vec<Particle> {
     let cy = config.height * 0.5;
     let r = 0.46 * config.width.min(config.height);
     let jitter = 0.006 * config.width.min(config.height);
-    let per_type = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
-
-    for t in 0..config.num_types {
-        let count = per_type
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (t, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
         let scale = 0.62 + rng.random::<f32>() * 0.38;
         let r_scaled = r * scale;
         let type_phase = rng.random::<f32>() * TAU;
@@ -724,7 +707,7 @@ fn chromatic_flower_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn yin_yang_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -776,7 +759,7 @@ fn yin_yang_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn twin_crescents_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let m = config.width.min(config.height);
     let cx = config.width * 0.5;
@@ -826,7 +809,7 @@ fn twin_crescents_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn twin_spirals_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -861,24 +844,17 @@ fn twin_spirals_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn spiral_arms_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
     let max_r = 0.46 * config.width.min(config.height);
     let turns = 2.5;
     let thick = (0.07 / config.num_types as f32).min(0.02) * config.width.min(config.height);
-    let per_arm = config.num_particles / config.num_types;
-    let mut remainder = config.num_particles % config.num_types;
-
-    for arm in 0..config.num_types {
-        let count = per_arm
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (arm, count) in bucket_counts(config.num_particles, config.num_types)
+        .into_iter()
+        .enumerate()
+    {
         let arm_rot = arm as f32 * TAU / config.num_types as f32;
         let n1 = (count - 1).max(1) as f32;
 
@@ -896,7 +872,7 @@ fn spiral_arms_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn polar_maze_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -908,17 +884,10 @@ fn polar_maze_generator(config: &SpawnConfig) -> Vec<Particle> {
     let dr = (r_max - r_min) / layers as f32;
     let dth = TAU / sectors as f32;
     let thick = 0.012 * m;
-    let per_layer = config.num_particles / layers;
-    let mut remainder = config.num_particles % layers;
-
-    for l in 0..layers {
-        let count = per_layer
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (l, count) in bucket_counts(config.num_particles, layers)
+        .into_iter()
+        .enumerate()
+    {
         let r = r_min + (l as f32 + 0.5) * dr;
         let t = l % config.num_types;
 
@@ -937,20 +906,13 @@ fn polar_maze_generator(config: &SpawnConfig) -> Vec<Particle> {
 
 fn chaotic_bands_generator(config: &SpawnConfig) -> Vec<Particle> {
     // Simplified version using random bands
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let lanes = rng.random_range(3..=10).min(config.num_types);
-    let per_lane = config.num_particles / lanes;
-    let mut remainder = config.num_particles % lanes;
-
-    for lane in 0..lanes {
-        let count = per_lane
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (lane, count) in bucket_counts(config.num_particles, lanes)
+        .into_iter()
+        .enumerate()
+    {
         let theta = rng.random::<f32>() * TAU;
         let ux = theta.cos();
         let uy = theta.sin();
@@ -973,24 +935,17 @@ fn chaotic_bands_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn radiant_fans_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let fans = config.num_types.clamp(3, 10);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
     let r = 0.46 * config.width.min(config.height);
     let spread = 0.22 * PI;
-    let per_fan = config.num_particles / fans;
-    let mut remainder = config.num_particles % fans;
-
-    for f in 0..fans {
-        let count = per_fan
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (f, count) in bucket_counts(config.num_particles, fans)
+        .into_iter()
+        .enumerate()
+    {
         let th0 = (f as f32 / fans as f32) * TAU + rng.random::<f32>() * 0.2;
         let t = f % config.num_types;
 
@@ -1007,24 +962,17 @@ fn radiant_fans_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn soft_clusters_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let clusters = rng.random_range(2..=6).min(config.num_types).max(2);
     let m = config.width.min(config.height);
     let margin = 0.18;
     let r_min = 0.14 * m;
     let r_max = 0.20 * m;
-    let per_cluster = config.num_particles / clusters;
-    let mut remainder = config.num_particles % clusters;
-
-    for c in 0..clusters {
-        let count = per_cluster
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (c, count) in bucket_counts(config.num_particles, clusters)
+        .into_iter()
+        .enumerate()
+    {
         let r = r_min + rng.random::<f32>() * (r_max - r_min);
         let cx = margin * config.width + rng.random::<f32>() * config.width * (1.0 - 2.0 * margin);
         let cy =
@@ -1044,12 +992,16 @@ fn soft_clusters_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn linked_clusters_generator(config: &SpawnConfig) -> Vec<Particle> {
-    // Simplified - just clusters for now
+    // TODO(ARC-039): currently delegates to `soft_clusters_generator`. The
+    // intent was to spawn clusters linked by linear filaments of particles
+    // between cluster centres; that geometry was never implemented. Keeping
+    // the dispatch so the `LinkedClusters` enum variant remains reachable,
+    // and documenting the alias so callers know what they get.
     soft_clusters_generator(config)
 }
 
 fn orbital_belts_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -1057,17 +1009,10 @@ fn orbital_belts_generator(config: &SpawnConfig) -> Vec<Particle> {
     let ecc = 0.35;
     let thick = 0.02 * r;
     let belts = rng.random_range(4..=8).min(config.num_types);
-    let per_belt = config.num_particles / belts;
-    let mut remainder = config.num_particles % belts;
-
-    for b in 0..belts {
-        let count = per_belt
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (b, count) in bucket_counts(config.num_particles, belts)
+        .into_iter()
+        .enumerate()
+    {
         let a = r * (0.25 + 0.7 * b as f32 / (belts - 1).max(1) as f32);
         let e = ecc * (0.6 + 0.8 * rng.random::<f32>());
         let c_offset = a * e;
@@ -1092,7 +1037,7 @@ fn orbital_belts_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn braided_belts_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -1102,17 +1047,10 @@ fn braided_belts_generator(config: &SpawnConfig) -> Vec<Particle> {
     let wav_freq = 4.0;
     let thick = 0.018 * r;
     let belts = rng.random_range(2..=5);
-    let per_belt = config.num_particles / belts;
-    let mut remainder = config.num_particles % belts;
-
-    for b in 0..belts {
-        let count = per_belt
-            + if remainder > 0 {
-                remainder -= 1;
-                1
-            } else {
-                0
-            };
+    for (b, count) in bucket_counts(config.num_particles, belts)
+        .into_iter()
+        .enumerate()
+    {
         let a = r * (0.55 + 0.35 * b as f32 / (belts - 1).max(1) as f32);
         let c_offset = a * ecc;
         let rot = rng.random::<f32>() * TAU;
@@ -1137,7 +1075,7 @@ fn braided_belts_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn linear_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
 
     for _ in 0..config.num_particles {
@@ -1153,7 +1091,7 @@ fn linear_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn radial_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;
@@ -1172,7 +1110,7 @@ fn radial_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
 }
 
 fn angular_gradient_generator(config: &SpawnConfig) -> Vec<Particle> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let mut particles = Vec::with_capacity(config.num_particles);
     let cx = config.width * 0.5;
     let cy = config.height * 0.5;

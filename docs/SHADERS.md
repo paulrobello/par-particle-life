@@ -362,9 +362,9 @@ graph LR
 
 ### brush_force.wgsl
 
-**Purpose:** Apply brush forces to particles in compute pass.
+**Purpose:** Compute shader that applies attraction/repulsion forces from the user's brush to nearby particles during the compute pass.
 
-> **Note:** Brush forces are now integrated into `particle_advance.wgsl` for efficiency.
+Loaded and dispatched by the brush pipeline in `src/renderer/gpu/pipelines/brush.rs`. This is the active path for the Attract and Repel brush tools; it is a standalone shader, not part of `particle_advance.wgsl`.
 
 ---
 
@@ -385,23 +385,34 @@ This allows runtime selection of precision without shader variants.
 
 ### SimParams Uniform
 
+The `SimParams` struct is duplicated across `src/renderer/gpu/buffers.rs` (`SimParamsUniform`) and the WGSL force/advance shaders (`particle_forces.wgsl`, `particle_forces_binned.wgsl`, `particle_advance.wgsl`). **Reordering, renaming, retyping, or resizing any field is a breaking change** — every copy must be updated together, or uniform access from offset 56 onward silently corrupts.
+
+The Rust side is verified against the WGSL layout by `sim_params_uniform_field_offsets_match_wgsl_layout` in `src/renderer/gpu/buffers.rs`, which asserts every field's `core::mem::offset_of!` and the total 80-byte size. Any change to the struct must keep that test green.
+
+The struct packs 20 4-byte fields followed by a single trailing `_padding2: u32` that rounds the total to 80 bytes (the 16-byte multiple required by WGSL uniform layout):
+
 ```wgsl
 struct SimParams {
-    num_particles: u32,      // 0
-    num_types: u32,          // 4
-    force_factor: f32,       // 8
-    friction: f32,           // 12
-    repel_strength: f32,     // 16
-    max_velocity: f32,       // 20
-    world_width: f32,        // 24
-    world_height: f32,       // 28
-    boundary_mode: u32,      // 32 (0=Repel, 1=Wrap, 2=MirrorWrap, 3=InfiniteWrap)
-    wall_repel_strength: f32,// 36
-    particle_size: f32,      // 40
-    dt: f32,                 // 44
-    max_bin_density: f32,    // 48
-    neighbor_budget: u32,    // 52
-    _padding: [u32; 6],      // 56-80 (16-byte alignment)
+    num_particles: u32,       //  0
+    num_types: u32,           //  4
+    force_factor: f32,        //  8
+    friction: f32,            // 12
+    repel_strength: f32,      // 16
+    max_velocity: f32,        // 20
+    world_width: f32,         // 24
+    world_height: f32,        // 28
+    boundary_mode: u32,       // 32 (0=Repel, 1=Wrap, 2=MirrorWrap, 3=InfiniteWrap)
+    wall_repel_strength: f32, // 36
+    particle_size: f32,       // 40
+    dt: f32,                  // 44
+    max_bin_density: f32,     // 48
+    neighbor_budget: u32,     // 52
+    velocity_coupling: f32,   // 56  (added 0.2.0 — boid-like alignment)
+    temperature: f32,         // 60  (added 0.2.0 — Brownian noise)
+    frame_counter: u32,       // 64  (added 0.2.0 — GPU noise seed)
+    num_obstacles: u32,       // 68  (added 0.3.0 — obstacle count, max MAX_OBSTACLES=16)
+    integration_method: u32,  // 72  (added 0.3.0 — 0=Euler, 1=Velocity Verlet)
+    _padding2: u32,           // 76  (rounds struct to 80 bytes)
 }
 ```
 

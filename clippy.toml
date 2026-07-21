@@ -1,0 +1,5 @@
+# clippy configuration.
+# Setting `msrv` enables the `clippy::msrv` lint, which flags APIs that
+# require a newer Rust than the declared minimum supported rust-version
+# (Cargo.toml `rust-version = "1.93"`). Keep this in sync with Cargo.toml.
+msrv = "1.93"

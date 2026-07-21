@@ -1,9 +1,14 @@
 cask "par-particle-life" do
 arch arm: "aarch64", intel: "x86_64"
 
-version "0.1.0"
-sha256 arm:   "15a49fcd1a7d6a7cbcd3acff7dc199945887f53d2780deeadaf4a35d294ad2d7",
-       intel: "55d96ed845a584396b63bc0ba2b65403525516f671513a2b2708603ce7392bab"
+# NOTE: The version and sha256 below are placeholders. The
+# publish-homebrew-cask-core.yml workflow rewrites this file in full on every
+# release, computing the real sha256 from the just-uploaded macOS zip assets
+# and replacing both `version` and the `sha256 arm:/intel:` pairs. Do not edit
+# them by hand unless you are intentionally cutting a manual release.
+version "0.3.0"
+sha256 arm:   "0000000000000000000000000000000000000000000000000000000000000000",
+       intel: "0000000000000000000000000000000000000000000000000000000000000000"
 
 url "https://github.com/paulrobello/par-particle-life/releases/download/v#{version}/par-particle-life-macos-#{arch}.zip"
 name "par-particle-life"

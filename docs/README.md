@@ -12,6 +12,7 @@ Technical documentation for Par Particle Life, a GPU-accelerated particle life s
 | [GENERATORS.md](GENERATORS.md) | Rule, color, and position generator reference |
 | [SHADERS.md](SHADERS.md) | WGSL shader documentation |
 | [DOCUMENTATION_STYLE_GUIDE.md](DOCUMENTATION_STYLE_GUIDE.md) | Documentation standards |
+| [superpowers/](superpowers/) | Historical planning artifacts (plans + specs) for shipped features — not maintained going forward |
 
 ## Quick Links
 

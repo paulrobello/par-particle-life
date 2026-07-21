@@ -1,0 +1,46 @@
+# Pre-commit hooks for par-particle-life.
+# Per the global mandate: secret scanning (gitleaks + detect-private-key)
+# runs on every commit so no credential can reach the remote.
+# Rust hooks are `local` to avoid depending on unmaintained third-party
+# pre-commit hook repos; they delegate to the project's own toolchain.
+---
+minimum_pre_commit_version: "3.2.0"
+
+repos:
+  # Secret scanning — official gitleaks pre-commit hook.
+  # Pinned to commit SHA of gitleaks v8.9.0 (ARC-047 / ARC-031).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 6efcfbaae240618685d847c17ab0ba9f6c46ed5c  # v8.9.0
+    hooks:
+      - id: gitleaks
+
+  # Local hooks — no third-party repo dependency.
+  # `detect-private-key` mirrors the well-known pre-commit-mirrors hook
+  # (now deleted upstream) by matching standard PEM private-key headers.
+  # `cargo-fmt-check` / `cargo-clippy` reuse the project's toolchain.
+  - repo: local
+    hooks:
+      - id: detect-private-key
+        name: Detect private keys
+        description: Detects the presence of private keys in the staged files.
+        entry: bash -c 'grep -nE "^(-----BEGIN (RSA |EC |OPENSSH |PGP |DSA |ENCRYPTED )?PRIVATE KEY-----|ssh-rsa |ssh-ed25519 |ssh-dss )" "$@" || exit 0' --
+        language: system
+        pass_filenames: true
+
+      - id: cargo-fmt-check
+        name: cargo fmt (verify)
+        description: Verify Rust formatting without modifying source.
+        entry: bash -c 'cargo fmt -- --check' --
+        language: system
+        files: \.rs$
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: cargo-clippy
+        name: cargo clippy
+        description: Run clippy with -D warnings on staged Rust files.
+        entry: bash -c 'cargo clippy --all-targets --all-features -- -D warnings' --
+        language: system
+        files: \.rs$
+        pass_filenames: false
+        stages: [pre-commit]

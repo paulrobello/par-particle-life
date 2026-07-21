@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::generators::seeded_rng;
+
 /// A color in RGBA format with f32 components [0.0, 1.0].
 pub type Color = [f32; 4];
 
@@ -330,18 +332,6 @@ impl PaletteType {
             | PaletteType::CyberDark => "Generative",
             _ => "Experimental",
         }
-    }
-}
-
-/// Trait for color palette generation.
-pub trait ColorPalette {
-    /// Generate colors for the given number of particle types.
-    fn generate(&self, num_types: usize) -> Vec<Color>;
-}
-
-impl ColorPalette for PaletteType {
-    fn generate(&self, num_types: usize) -> Vec<Color> {
-        generate_colors(*self, num_types)
     }
 }
 
@@ -730,7 +720,7 @@ const DESERT_WARM: [KeyColor; 5] = [
 // === Generator Implementations ===
 
 fn random_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     (0..n)
         .map(|_| [rng.random(), rng.random(), rng.random(), 1.0])
         .collect()
@@ -825,7 +815,7 @@ fn crimson_flame_generator(n: usize) -> Vec<Color> {
 }
 
 fn dual_gradient_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let start_h: f32 = rng.random::<f32>() * 360.0;
     let mut end_h: f32 = rng.random::<f32>() * 360.0;
 
@@ -860,7 +850,7 @@ fn dual_gradient_generator(n: usize) -> Vec<Color> {
 }
 
 fn candy_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let phi = 137.507_77_f32;
     let base_h: f32 = rng.random::<f32>() * 360.0;
 
@@ -877,7 +867,7 @@ fn candy_generator(n: usize) -> Vec<Color> {
 }
 
 fn organic_flow_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let base_h: f32 = rng.random::<f32>() * 15.0;
 
     (0..n)
@@ -898,7 +888,7 @@ fn organic_flow_generator(n: usize) -> Vec<Color> {
 }
 
 fn earth_flow_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let h_a: f32 = rng.random::<f32>() * 20.0 + 10.0;
     let h_b = (h_a + rng.random::<f32>() * 80.0 + 140.0) % 360.0;
     let phase = rng.random::<f32>() * PI;
@@ -927,7 +917,7 @@ fn earth_flow_generator(n: usize) -> Vec<Color> {
 }
 
 fn gameboy_dmg_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let steps = [0.2f32, 0.35, 0.55, 0.78];
     let hue: f32 = rng.random::<f32>() * 20.0 + 90.0;
 
@@ -942,7 +932,7 @@ fn gameboy_dmg_generator(n: usize) -> Vec<Color> {
 }
 
 fn paper_ink_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let inks = [210.0f32, 30.0, 220.0];
 
     (0..n)
@@ -967,7 +957,7 @@ fn paper_ink_generator(n: usize) -> Vec<Color> {
 }
 
 fn fluoro_sport_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let accents = [95.0f32, 175.0, 310.0];
 
     (0..n)
@@ -987,7 +977,7 @@ fn fluoro_sport_generator(n: usize) -> Vec<Color> {
 }
 
 fn midnight_circuit_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let accent_h: f32 = rng.random::<f32>() * 340.0 + 10.0;
     let accent_period = (n / 3).max(3);
 
@@ -1007,7 +997,7 @@ fn midnight_circuit_generator(n: usize) -> Vec<Color> {
 }
 
 fn biolum_abyss_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let accent_count = (n / 4).clamp(1, 2);
 
     (0..n)
@@ -1027,7 +1017,7 @@ fn biolum_abyss_generator(n: usize) -> Vec<Color> {
 }
 
 fn blueprint_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let accent_count = (n / 5).clamp(1, 2);
 
     (0..n)
@@ -1047,7 +1037,7 @@ fn blueprint_generator(n: usize) -> Vec<Color> {
 }
 
 fn cyber_dark_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let accent_h: f32 = rng.random::<f32>() * 340.0 + 10.0;
     let accent_period = (n / 3).max(3);
 
@@ -1066,7 +1056,7 @@ fn cyber_dark_generator(n: usize) -> Vec<Color> {
 }
 
 fn holo_foil_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let k1: f32 = rng.random::<f32>() * 0.6 + 0.8;
     let k2: f32 = rng.random::<f32>() * 1.4 + 2.2;
 
@@ -1099,7 +1089,7 @@ fn holo_foil_generator(n: usize) -> Vec<Color> {
 }
 
 fn gemstones_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let hues = [140.0f32, 350.0, 220.0, 45.0, 200.0, 300.0];
 
     (0..n)
@@ -1114,7 +1104,7 @@ fn gemstones_generator(n: usize) -> Vec<Color> {
 }
 
 fn vaporwave_pastel_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let anchors = [320.0f32, 260.0, 170.0];
 
     (0..n)
@@ -1130,7 +1120,7 @@ fn vaporwave_pastel_generator(n: usize) -> Vec<Color> {
 }
 
 fn solarized_drift_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let anchors = [
         (44.0f32, 0.55, 0.92),
         (44.0, 0.25, 0.60),
@@ -1155,7 +1145,7 @@ fn solarized_drift_generator(n: usize) -> Vec<Color> {
 }
 
 fn aurora_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let center: f32 = rng.random::<f32>() * 100.0 + 120.0;
 
     (0..n)
@@ -1172,7 +1162,7 @@ fn aurora_generator(n: usize) -> Vec<Color> {
 }
 
 fn cyber_neon_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let base_h: f32 = rng.random::<f32>() * 60.0 + 280.0;
 
     (0..n)
@@ -1189,7 +1179,7 @@ fn cyber_neon_generator(n: usize) -> Vec<Color> {
 }
 
 fn golden_angle_jitter_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let phi = 137.507_77_f32;
     let base_h: f32 = rng.random::<f32>() * 360.0;
     let s_base: f32 = rng.random::<f32>() * 0.35 + 0.6;
@@ -1209,7 +1199,7 @@ fn golden_angle_jitter_generator(n: usize) -> Vec<Color> {
 }
 
 fn cmyk_misregister_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let inks = [200.0f32, 300.0, 55.0, 220.0];
 
     (0..n)
@@ -1225,7 +1215,7 @@ fn cmyk_misregister_generator(n: usize) -> Vec<Color> {
 }
 
 fn anodized_metal_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let hue0: f32 = rng.random::<f32>() * 140.0 + 180.0;
 
     (0..n)
@@ -1254,7 +1244,7 @@ fn anodized_metal_generator(n: usize) -> Vec<Color> {
 }
 
 fn ink_bleed_watercolor_generator(n: usize) -> Vec<Color> {
-    let mut rng = rand::rng();
+    let mut rng = seeded_rng();
     let center: f32 = rng.random::<f32>() * 70.0 + 190.0;
 
     (0..n)

@@ -1,5 +1,7 @@
 # Par Particle Life — Enhancement Ideas
 
+> **Disclaimer:** This file is an aspirational, non-authoritative scratchpad of ideas under consideration. It is not a roadmap and not a commitment. Items may be stale, partially implemented, abandoned, or already shipped. Treat the [CHANGELOG](CHANGELOG.md) and the [open GitHub issues](https://github.com/paulrobello/par-particle-life/issues) as the source of truth for what is actually planned or done.
+
 Remove completed items from this list and update CHANGELOG.md
 
 ## Generators

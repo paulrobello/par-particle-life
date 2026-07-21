@@ -4,6 +4,7 @@ use std::sync::Arc;
 use winit::window::{Icon, Window};
 
 use super::AppHandler;
+use crate::app::error::AppError;
 use crate::app::gpu_state::{GpuState, MAX_TIMESTAMP_QUERIES, SpatialBindGroupCache};
 use crate::renderer::gpu::{
     BrushPipelines, ComputePipelines, GpuContext, RenderPipelines, SimulationBuffers,
@@ -11,10 +12,19 @@ use crate::renderer::gpu::{
 };
 
 impl AppHandler {
-    pub(crate) fn init_gpu(&mut self, window: Arc<Window>) {
-        // Initialize GPU context using vsync preference from config
-        let context = pollster::block_on(GpuContext::new(window.clone(), self.app.config.vsync))
-            .expect("Failed to create GPU context");
+    /// Initialize the GPU context, buffers, pipelines, and egui state.
+    ///
+    /// Returns [`AppError`] (ARC-013) instead of panicking via `.expect` so a
+    /// transient GPU init failure surfaces as a logged error and a clean
+    /// `event_loop.exit()` in `resumed` rather than an unfriendly abort.
+    /// `gpu_state.rs`'s internal error paths still use `anyhow` and are
+    /// wrapped into [`AppError::Gpu`] by the `#[from] anyhow::Error`
+    /// conversion at the call site.
+    pub(crate) fn init_gpu(&mut self, window: Arc<Window>) -> Result<(), AppError> {
+        // Initialize GPU context using vsync preference from config.
+        // GpuContext::new returns anyhow::Error; AppError::Gpu(#[from] anyhow::Error)
+        // converts automatically via `?`.
+        let context = pollster::block_on(GpuContext::new(window.clone(), self.app.config.vsync))?;
 
         // Create simulation buffers
         let colors_rgba = self.app.colors_as_rgba();
@@ -160,6 +170,7 @@ impl AppHandler {
             self.app.particles.len(),
             self.app.sim_config.num_types
         );
+        Ok(())
     }
 
     pub(super) fn load_window_icon() -> Option<Icon> {

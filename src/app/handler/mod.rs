@@ -24,10 +24,45 @@ use crate::video_recorder::{VideoFormat, VideoRecorder};
 
 /// Tracks whether the current rule selection is a built-in type or custom generator.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // variants/fields consumed by subsequent tasks
 pub(crate) enum RuleSelection {
     BuiltIn(RuleType),
     Custom(usize),
+}
+
+/// UI-only state for the Presets and Custom-Palettes panels.
+///
+/// Extracted from the `AppHandler` god object (ARC-011) as the first isolated
+/// cluster — these four fields are accessed only from `ui.rs` + `mod.rs`, so
+/// they can move behind a sub-struct without breaking call sites in other
+/// handler files. The remaining clusters (FPS tracking, capture/video state,
+/// obstacle-edit state, the nine `ui_*_open` panel booleans) are read or
+/// written directly from `events.rs`/`update.rs`/`render.rs`/`recording.rs`/
+/// `buffer_sync.rs`/`brush.rs` using field syntax, and Rust has no field
+/// delegation, so they cannot be moved behind a sub-struct without
+/// coordinated multi-file edits. That larger refactor is out of scope for
+/// this agent's four-file allocation.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PresetUiState {
+    /// Currently selected preset name for loading.
+    pub(crate) selected_preset: String,
+    /// Name for saving new preset.
+    pub(crate) save_preset_name: String,
+    /// Currently selected custom palette name for loading.
+    pub(crate) selected_custom_palette: String,
+    /// Name for saving custom palettes.
+    pub(crate) save_custom_palette_name: String,
+}
+
+impl PresetUiState {
+    /// Initial state used by [`AppHandler::new`].
+    fn new() -> Self {
+        Self {
+            selected_preset: String::new(),
+            save_preset_name: String::from("my_preset"),
+            selected_custom_palette: String::new(),
+            save_custom_palette_name: String::from("my_palette"),
+        }
+    }
 }
 
 /// Application handler for the winit event loop.
@@ -76,16 +111,10 @@ pub struct AppHandler {
     pub(crate) ui_obstacles_open: bool,
     /// Available presets list.
     pub(crate) preset_list: Vec<String>,
-    /// Currently selected preset name for loading.
-    pub(crate) selected_preset: String,
-    /// Name for saving new preset.
-    pub(crate) save_preset_name: String,
+    /// UI-only state for the Presets and Custom-Palettes panels.
+    pub(crate) preset_ui: PresetUiState,
     /// Status message for preset operations.
     pub(crate) preset_status: String,
-    /// Currently selected custom palette name for loading.
-    pub(crate) selected_custom_palette: String,
-    /// Name for saving custom palettes.
-    pub(crate) save_custom_palette_name: String,
     /// Last captured file path (screenshot or video) for "Open" button.
     pub(crate) last_capture_path: Option<String>,
     /// Screenshot requested flag.
@@ -127,7 +156,6 @@ pub struct AppHandler {
     /// When true, run exactly one frame then pause (step-by-step mode).
     pub(crate) step_requested: bool,
     /// Current rule selection (built-in or custom generator).
-    #[allow(dead_code)] // consumed by subsequent tasks
     pub(crate) rule_selection: RuleSelection,
     /// Index of the currently selected obstacle (-1 = none).
     pub(crate) selected_obstacle: i32,
@@ -242,11 +270,8 @@ impl AppHandler {
             ui_keyboard_shortcuts_open,
             ui_obstacles_open,
             preset_list,
-            selected_preset: String::new(),
-            save_preset_name: String::from("my_preset"),
+            preset_ui: PresetUiState::new(),
             preset_status: String::new(),
-            selected_custom_palette: String::new(),
-            save_custom_palette_name: String::from("my_palette"),
             last_capture_path: None,
             screenshot_requested: false,
             screenshot_counter: 0,

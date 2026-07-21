@@ -17,7 +17,7 @@ Generators create the initial state of a particle simulation through three indep
 ```mermaid
 graph TB
     subgraph Generators["Generator System"]
-        Rules[Rule Generators<br/>31 types]
+        Rules[Rule Generators<br/>34 types]
         Colors[Color Palettes<br/>37 types]
         Positions[Position Patterns<br/>31 types]
     end
@@ -55,7 +55,7 @@ Rule generators create interaction matrices that define how particle types attra
 | `0.0` | No interaction |
 | `-1.0` | Strong repulsion |
 
-### Available Rules (31)
+### Available Rules (34)
 
 #### Default
 
@@ -133,6 +133,14 @@ Rule generators create interaction matrices that define how particle types attra
 | **Offset Phasefield** | Twisted phase gradient |
 | **Ring Road** | Distance-based circular interactions |
 | **Drifted Patchwork** | Wave + noise masking hybrid |
+
+#### 0.3.0 Additions
+
+| Name | Description |
+|------|-------------|
+| **Block Diagonal** | Block-diagonal structure with strong intra-block attraction, weak inter-block coupling |
+| **Cyclic Pursuit** | Each type pursues the next in a cyclic chain (generalized Rock-Paper-Scissors) |
+| **Random Sparse** | Random non-zero entries scattered through an otherwise zero matrix |
 
 ### Rule Generator Example
 
@@ -391,6 +399,48 @@ pub trait ColorPalette {
     fn generate(&self, num_types: usize) -> Vec<[f32; 4]>;
 }
 ```
+
+## Custom Generators (Expression DSL)
+
+In addition to the built-in `RuleType` variants, the rule generator can be driven by user-authored JSON files stored in the platform data directory. Each file names a generator and supplies a single expression written in a small infix DSL; the expression is evaluated for every `(i, j)` cell of the interaction matrix.
+
+### Expression DSL
+
+The DSL supports:
+
+- Variables: `i` (row type index), `j` (column type index), `n` (total type count)
+- Arithmetic: `+ - * / %` (standard precedence; `^` is **not** power — use `pow(base, exp)`)
+- Comparison: `< <= > >= == !=`
+- Ternary: `cond ? a : b`
+- Built-in functions: `sin`, `cos`, `tan`, `abs`, `sqrt`, `pow`, `min`, `max`, `random` (unseeded, returns `[0,1)`)
+- Parentheses for grouping
+
+> **Note:** Division or modulus by zero evaluates to `0` rather than erroring. `random()` is **unseeded**, so a custom matrix regenerated from the same file (e.g. by re-opening the dropdown) will differ cell-by-cell.
+
+### Example Custom Generator JSON
+
+```json
+{
+  "name": "Diagonal Bands",
+  "expression": "0.8 * exp(-((i - j) * (i - j)) / 4.0) - 0.2"
+}
+```
+
+### Library Surface
+
+The library exposes the parser/evaluator and the custom-generator loader:
+
+```rust
+use par_particle_life::generators::{CustomGenerator, Expr, EvalContext};
+
+let expr = Expr::parse("sin(i + j) * 0.5")?;
+let value = expr.eval(&EvalContext { i: 0, j: 1, n: 4 })?;
+
+let gen = CustomGenerator::from_json_file(path)?;
+let matrix = gen.generate(4);
+```
+
+Loaded custom generators appear in the **Generators** panel dropdown alongside the built-in `RuleType` variants; the **Reload** button re-scans the data directory.
 
 ### Enum Methods
 

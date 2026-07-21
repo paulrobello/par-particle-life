@@ -4,8 +4,10 @@ Complete reference for all configuration options in Par Particle Life.
 
 ## Table of Contents
 - [Overview](#overview)
+- [Command-Line Flags](#command-line-flags)
 - [Simulation Parameters](#simulation-parameters)
 - [Physics Settings](#physics-settings)
+- [Dynamics and Integration](#dynamics-and-integration)
 - [Rendering Options](#rendering-options)
 - [Boundary Modes](#boundary-modes)
 - [Performance Tuning](#performance-tuning)
@@ -48,6 +50,20 @@ graph TB
     style Render fill:#0d47a1,stroke:#2196f3,stroke-width:2px,color:#ffffff
     style Window fill:#4a148c,stroke:#9c27b0,stroke-width:2px,color:#ffffff
 ```
+
+## Command-Line Flags
+
+The `par-particle-life` binary uses clap and exposes a single flag:
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--reset-config` | `bool` | `false` | Reset the persisted `AppConfig` to defaults on startup, then run normally. Use this if a corrupted config prevents launch. |
+
+```bash
+par-particle-life --reset-config
+```
+
+The flag is parsed only by the binary; the library does not see it. Persisted settings (window size, panel state, generator defaults, physics overrides) live under [Configuration Files](#configuration-files).
 
 ## Simulation Parameters
 
@@ -123,6 +139,22 @@ else:
 | 0.3 | Default, good stability |
 | 0.5 | Heavy damping, viscous |
 | 0.9 | Very sluggish movement |
+
+## Dynamics and Integration
+
+These fields were added in 0.2.0 and 0.3.0 and control higher-level dynamics beyond pure force response. They all carry `#[serde(default)]`, so older preset JSON continues to load.
+
+### Time and Motion
+
+| Parameter | Type | Default | Range | Description |
+|-----------|------|---------|-------|-------------|
+| `temperature` | f32 | 0.0 | 0.0 - 50.0 | Brownian noise strength. Adds a small random velocity perturbation each frame using a PCG hash seeded by `frame_counter`. |
+| `time_scale` | f32 | 1.0 | 0.1 - 5.0 | Multiplied with the frame `dt` for slow-motion (`< 1.0`) or fast-forward (`> 1.0`). |
+| `velocity_coupling` | f32 | 0.0 | 0.0 - 1.0 | When > 0, particles align their velocity with their neighbors' average velocity, producing boid-like flocking. |
+| `integration_method` | IntegrationMethod | Euler | Euler, VelocityVerlet | Numerical integrator. `VelocityVerlet` updates position using the average of the previous and updated velocity (more energy-conserving). |
+| `frame_counter` | u32 | 0 | u32 | Incremented every frame; used as the GPU noise seed for `temperature`. Not generally user-facing — it is part of the config so it round-trips through presets. |
+
+> **Note:** `temperature` and `velocity_coupling` are the two fields historically dropped by the close-handler prior to the audit remediation; both are now persisted on every normal quit.
 
 ## Rendering Options
 

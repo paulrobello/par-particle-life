@@ -56,9 +56,9 @@ graph TB
     end
 
     subgraph Generators["Generator System"]
-        Rules[Rule Generators<br/>31 types]
+        Rules[Rule Generators<br/>34 types]
         Colors[Color Palettes<br/>37 types]
-        Positions[Spawn Patterns<br/>28 types]
+        Positions[Spawn Patterns<br/>31 types]
     end
 
     subgraph Media["Media Output"]
@@ -114,12 +114,12 @@ graph TB
 
 ```
 src/
-├── main.rs              # CLI entry point
+├── main.rs              # Binary entry point (clap CLI, drives AppHandler via winit)
 ├── lib.rs               # Library root, public exports
 ├── app/
 │   ├── mod.rs           # App module exports
-│   ├── state.rs         # Core App struct and simulation state
-│   ├── config.rs        # Persistent configuration
+│   ├── state.rs         # Core App struct and simulation state (headless-embeddable)
+│   ├── config.rs        # Persistent AppConfig
 │   ├── preset.rs        # Save/load simulation states
 │   ├── input.rs         # Brush and camera state
 │   ├── gpu_state.rs     # GPU context and bind group caching
@@ -137,28 +137,33 @@ src/
 │       └── presets_ops.rs    # Preset save/load operations
 ├── simulation/
 │   ├── mod.rs           # Simulation exports, SimulationConfig
-│   ├── particle.rs      # Particle, InteractionMatrix, RadiusMatrix
-│   ├── physics.rs       # PhysicsEngine, force calculation
-│   ├── spatial_hash.rs  # Spatial partitioning optimization
-│   ├── boundary.rs      # Boundary mode implementations
+│   ├── particle.rs      # Particle, InteractionMatrix, RadiusMatrix, SoA types
+│   ├── spatial_hash.rs  # CPU-side spatial hash (tooling/tests; GPU hash runs in shaders)
+│   ├── boundary.rs      # BoundaryMode implementations
+│   ├── obstacle.rs      # Obstacle, ObstacleShape, ObstacleData (MAX_OBSTACLES=16)
+│   ├── matrix_variation.rs  # Time-varying interaction matrices (Oscillate/Drift)
 │   └── game_of_life.rs  # Alternative simulation mode
 ├── generators/
 │   ├── mod.rs           # Generator exports
-│   ├── rules.rs         # 31 interaction matrix generators
+│   ├── rules.rs         # 34 interaction matrix generators
 │   ├── colors.rs        # 37 color palette generators
-│   └── positions.rs     # 28 spawn pattern generators
+│   ├── positions.rs     # 31 spawn pattern generators
+│   ├── custom.rs        # CustomGenerator (user JSON rule generators)
+│   └── expression.rs    # Expr DSL parser/evaluator used by custom generators
 ├── renderer/
 │   ├── mod.rs           # Renderer exports
 │   └── gpu/
 │       ├── mod.rs       # GPU module exports
 │       ├── context.rs   # wgpu device, queue, surface
-│       ├── buffers.rs   # GPU buffer management
+│       ├── buffers.rs   # GPU buffer management (incl. SimParamsUniform + layout test)
 │       └── pipelines/   # Pipeline management (modular)
 │           ├── mod.rs       # CameraUniform, shader loader, re-exports
 │           ├── compute.rs   # Force and advance compute pipelines
 │           ├── render.rs    # Particle visualization render pipelines
 │           ├── spatial.rs   # Spatial hashing optimization pipelines
-│           └── brush.rs     # Brush interaction pipelines
+│           └── brush.rs     # Brush interaction pipelines (loads brush_force.wgsl)
+├── ui/
+│   └── mod.rs           # UI helpers
 ├── utils/
 │   ├── mod.rs           # Utility exports
 │   ├── color.rs         # Color conversion utilities
@@ -411,7 +416,7 @@ stateDiagram-v2
 
 ```mermaid
 graph TB
-    subgraph Rules["Rule Generators (31)"]
+    subgraph Rules["Rule Generators (34)"]
         RulesEnum[RuleType Enum]
         RulesGen[generate_rules fn]
         Matrix[InteractionMatrix]
@@ -423,7 +428,7 @@ graph TB
         Palette["Vec<[f32; 4]>"]
     end
 
-    subgraph Positions["Position Generators (28)"]
+    subgraph Positions["Position Generators (31)"]
         PosEnum[PositionPattern Enum]
         PosGen[generate_positions fn]
         Particles["Vec<Particle>"]
@@ -453,7 +458,7 @@ pub enum RuleType {
     Random,
     Symmetric,
     Snake,
-    // ... 28 more
+    // ... 31 more — 34 total
 }
 
 // 2. Static list of all variants

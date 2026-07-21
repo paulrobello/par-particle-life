@@ -8,3 +8,6 @@ recording_*.gif
 recording_*.mp4
 recording_*.webm
 statusline-*
+
+# Local-only Claude Code settings (may carry API tokens — never commit)
+.claude/settings.local.json

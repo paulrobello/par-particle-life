@@ -1,14 +1,12 @@
 //! Simulation module containing core physics and data structures.
 
 mod boundary;
-mod game_of_life;
 mod matrix_variation;
 mod obstacle;
 mod particle;
 mod spatial_hash;
 
 pub use boundary::BoundaryMode;
-pub use game_of_life::GameOfLife;
 pub use matrix_variation::{MatrixVariationConfig, MatrixVariationMode};
 pub use obstacle::{MAX_OBSTACLES, Obstacle, ObstacleData, ObstacleShape};
 pub use particle::{
@@ -94,6 +92,11 @@ pub struct SimulationConfig {
     pub glow_steepness: f32,
 
     /// Use spatial hashing for force calculation optimization.
+    ///
+    /// TODO(ARC-032): dead config — force-set `true` on every frame in
+    /// `update.rs`/`ui.rs`/`state.rs`. The field remains for now so the
+    /// cross-file write-sites in those handlers can be removed in
+    /// coordination with the agents that own them (Phase 4 reconciliation).
     pub use_spatial_hash: bool,
 
     /// Spatial hash cell size. Should be >= max interaction radius.
@@ -116,6 +119,12 @@ pub struct SimulationConfig {
     pub temperature: f32,
 
     /// Frame counter for seeding GPU random noise. Incremented each frame.
+    ///
+    /// Runtime-only — never persisted (ARC-034). Skipping serialization keeps
+    /// the counter out of every preset JSON while preserving the read site at
+    /// `sim_config.frame_counter` so the GPU uniform write (`buffers.rs`) and
+    /// the per-frame increment (`update.rs`) keep compiling unchanged.
+    #[serde(skip)]
     #[serde(default)]
     pub frame_counter: u32,
 

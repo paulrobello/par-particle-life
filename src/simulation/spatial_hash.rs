@@ -34,17 +34,26 @@ pub struct SpatialHash {
 impl SpatialHash {
     /// Build a spatial hash from a slice of particles.
     ///
-    /// Returns `Err` if `world_size` is non-finite/non-positive or if the
-    /// implied grid would overflow `usize` or exceed `MAX_SPATIAL_HASH_CELLS`.
+    /// Returns `Err` if:
+    /// * `world_size` is non-finite/non-positive,
+    /// * the implied grid would overflow `usize` or exceed `MAX_SPATIAL_HASH_CELLS`,
+    /// * `cell_size < max_interaction_radius` (the load-bearing neighbour-correctness
+    ///   invariant — previously enforced ad hoc at each call site, now at the
+    ///   type boundary per ARC-037).
+    ///
     /// Callers should fall back to brute-force neighbour search on error.
     ///
     /// # Arguments
     /// * `particles` - Particles to index
-    /// * `cell_size` - Size of each cell (should be >= max interaction radius)
+    /// * `cell_size` - Size of each cell; must be `>= max_interaction_radius`
+    ///   so a single cell-radius ring covers every interaction partner.
+    /// * `max_interaction_radius` - Largest interaction radius any particle
+    ///   pair can have. Enforced as a lower bound on `cell_size`.
     /// * `world_size` - Size of the world bounds
     pub fn build(
         particles: &[Particle],
         cell_size: f32,
+        max_interaction_radius: f32,
         world_size: Vec2,
     ) -> Result<Self, String> {
         if !world_size.x.is_finite()
@@ -55,6 +64,20 @@ impl SpatialHash {
             return Err(format!(
                 "SpatialHash world_size must be positive and finite, got ({}, {})",
                 world_size.x, world_size.y
+            ));
+        }
+        // ARC-037: cell-size invariant belongs here, not at every call site.
+        // `query_radius` only scans a single cell-width ring around the
+        // query cell — if any interaction radius exceeds the cell size, a
+        // neighbour could be silently missed. Reject that at construction.
+        let max_radius = max_interaction_radius.max(0.0);
+        if !max_radius.is_finite() || cell_size < max_radius {
+            return Err(format!(
+                "SpatialHash cell_size ({cell_size}) must be >= max_interaction_radius \
+                 ({max_radius}); increase cell_size or reduce interaction radii \
+                 (world_size=({wx}, {wy}))",
+                wx = world_size.x,
+                wy = world_size.y,
             ));
         }
         let cell_size = cell_size.max(1.0); // Prevent division by zero
@@ -256,7 +279,7 @@ mod tests {
     #[test]
     fn test_spatial_hash_build() {
         let particles = make_particles();
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+        let hash = SpatialHash::build(&particles, 20.0, 10.0, Vec2::new(100.0, 100.0))
             .expect("build should succeed for sane inputs");
 
         assert!(hash.num_cells() > 0);
@@ -267,7 +290,7 @@ mod tests {
     #[test]
     fn test_query_radius() {
         let particles = make_particles();
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+        let hash = SpatialHash::build(&particles, 20.0, 10.0, Vec2::new(100.0, 100.0))
             .expect("build should succeed for sane inputs");
 
         // Query near particles 0 and 1
@@ -282,7 +305,7 @@ mod tests {
     #[test]
     fn test_cell_index() {
         let particles = make_particles();
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+        let hash = SpatialHash::build(&particles, 20.0, 10.0, Vec2::new(100.0, 100.0))
             .expect("build should succeed for sane inputs");
 
         assert!(hash.get_cell_index(10.0, 10.0).is_some());
@@ -296,7 +319,7 @@ mod tests {
             Particle::new(5.0, 50.0, 0),  // Near left edge
             Particle::new(95.0, 50.0, 1), // Near right edge
         ];
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+        let hash = SpatialHash::build(&particles, 20.0, 10.0, Vec2::new(100.0, 100.0))
             .expect("build should succeed for sane inputs");
 
         // Query from particle 0, with wrapping should find particle 1
@@ -311,7 +334,7 @@ mod tests {
         // SEC-005: world_size.x = 1e30 with cell_size = 1.0 must not allocate
         // gigabytes of cells. The build must return Err instead.
         let particles = make_particles();
-        let err = SpatialHash::build(&particles, 1.0, Vec2::new(1e30, 1e30))
+        let err = SpatialHash::build(&particles, 1.0, 0.0, Vec2::new(1e30, 1e30))
             .expect_err("pathological world_size must be rejected");
         assert!(
             err.contains("exceeds limit") || err.contains("overflows usize"),
@@ -322,7 +345,7 @@ mod tests {
     #[test]
     fn test_build_rejects_non_finite_world_size() {
         let particles = make_particles();
-        let err = SpatialHash::build(&particles, 10.0, Vec2::new(f32::NAN, 100.0))
+        let err = SpatialHash::build(&particles, 10.0, 0.0, Vec2::new(f32::NAN, 100.0))
             .expect_err("NaN world_size must be rejected");
         assert!(err.contains("finite"), "expected finite-check error, got: {err}");
     }
@@ -330,8 +353,29 @@ mod tests {
     #[test]
     fn test_build_rejects_zero_world_size() {
         let particles = make_particles();
-        let err = SpatialHash::build(&particles, 10.0, Vec2::new(0.0, 100.0))
+        let err = SpatialHash::build(&particles, 10.0, 0.0, Vec2::new(0.0, 100.0))
             .expect_err("zero world_size must be rejected");
         assert!(err.contains("positive"), "expected positive-check error, got: {err}");
+    }
+
+    #[test]
+    fn test_build_rejects_cell_size_below_max_radius() {
+        // ARC-037: cell_size < max_interaction_radius breaks the assumption
+        // that scanning one cell ring finds every neighbour.
+        let particles = make_particles();
+        let err = SpatialHash::build(&particles, 5.0, 20.0, Vec2::new(100.0, 100.0))
+            .expect_err("cell_size < max_interaction_radius must be rejected");
+        assert!(
+            err.contains("max_interaction_radius"),
+            "expected cell-size invariant error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_build_accepts_cell_size_equal_to_max_radius() {
+        let particles = make_particles();
+        let hash = SpatialHash::build(&particles, 20.0, 20.0, Vec2::new(100.0, 100.0))
+            .expect("cell_size == max_interaction_radius is the boundary legal case");
+        assert!(hash.num_cells() > 0);
     }
 }

@@ -1,6 +1,7 @@
 # Makefile for par-particle-life
 
-.PHONY: build clean format lint test checkall release run help deploy
+# `all`, `bundle`, `run-bundle` are real artifacts/targets — excluded from .PHONY.
+.PHONY: build clean fmt format typecheck lint test checkall release run help deploy
 
 # Default target
 all: build
@@ -21,20 +22,27 @@ run:
 clean:
 	cargo clean
 
-# Format code with rustfmt
+# Format code with rustfmt (APPLY — mutates source).
+# Use `make fmt` in CI / pre-commit for the non-mutating verify variant.
 format:
 	cargo fmt
 
-# Lint code with clippy
+# Verify formatting WITHOUT mutating source (cargo fmt --check).
+# This is what `make checkall` and CI use; never reorders code.
+fmt:
+	cargo fmt -- --check
+
+# Lint code with clippy (all targets/features, warnings are errors).
 lint:
-	cargo clippy -- -D warnings
+	cargo clippy --all-targets --all-features -- -D warnings
 
 # Run tests
 test:
 	cargo test
 
-# Check all: format, lint, and test
-checkall: format lint test
+# Check all: VERIFY ONLY (no source mutation).
+# `fmt` here is the verify variant; `format` is the apply variant.
+checkall: fmt lint test
 	@echo "All checks passed!"
 
 # Deploy: trigger release pipeline
@@ -43,7 +51,7 @@ deploy:
 	@echo "Release pipeline triggered. View at: https://github.com/paulrobello/par-particle-life/actions"
 
 # Type check only (fast)
-check:
+typecheck:
 	cargo check
 
 # Help
@@ -55,11 +63,12 @@ help:
 	@echo "  bundle     - Create macOS App Bundle"
 	@echo "  run-bundle - Create and run macOS App Bundle"
 	@echo "  clean      - Clean build artifacts"
-	@echo "  format     - Format code with rustfmt"
-	@echo "  lint       - Lint code with clippy"
+	@echo "  fmt        - Verify formatting (cargo fmt --check, non-mutating)"
+	@echo "  format     - Apply formatting (cargo fmt, mutates source)"
+	@echo "  typecheck  - Type check only (cargo check, fast)"
+	@echo "  lint       - Lint code with clippy (all targets/features, -D warnings)"
 	@echo "  test       - Run tests"
-	@echo "  checkall   - Run format, lint, and test"
-	@echo "  check      - Type check only (fast)"
+	@echo "  checkall   - Verify fmt + lint + test (non-mutating; run before commits)"
 	@echo "  deploy     - Trigger release pipeline"
 	@echo "  help       - Show this help message"
 

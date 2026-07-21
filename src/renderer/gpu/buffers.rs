@@ -25,27 +25,61 @@ pub struct SpatialParamsUniform {
     pub grid_height: u32,
 }
 
+/// Hard cap on `grid_width * grid_height` to keep the bin-count buffers
+/// within reasonable GPU memory and to prevent u32 overflow. The two
+/// `bin_counts_{a,b}` buffers each allocate `(total_bins + 1) * 4` bytes, so
+/// 16M bins tops out at ~64 MB per buffer (128 MB total) — well under the
+/// 128 MB `max_storage_buffer_binding_size` enforced in `GpuContext`.
+///
+/// Pairs with the CPU-side `SpatialHash::build` clamp (SEC-005); any change
+/// here must be mirrored there.
+pub const MAX_TOTAL_BINS: u32 = 16 * 1024 * 1024;
+
 impl SpatialParamsUniform {
     /// Create spatial parameters from simulation config.
     ///
     /// Cell size is clamped to the maximum interaction radius so that
-    /// a 3x3 bin neighborhood fully covers the force range.
+    /// a 3x3 bin neighborhood fully covers the force range. Grid dimensions
+    /// are clamped so that `grid_width * grid_height` cannot overflow `u32`
+    /// or allocate an unreasonable bin-count buffer (see `MAX_TOTAL_BINS`).
     pub fn from_config(config: &SimulationConfig, max_radius: f32) -> Self {
-        let cell_size = config.spatial_hash_cell_size.max(max_radius);
-        let grid_width = (config.world_size.x / cell_size).ceil() as u32;
-        let grid_height = (config.world_size.y / cell_size).ceil() as u32;
+        let cell_size = config.spatial_hash_cell_size.max(max_radius).max(1.0);
 
-        Self {
+        let raw_grid_width = (config.world_size.x / cell_size).ceil();
+        let raw_grid_height = (config.world_size.y / cell_size).ceil();
+
+        // Saturate each dimension first (handles NaN / Inf from a degenerate
+        // world or cell size), then the product (handles the realistic case
+        // where each dimension alone is in range but their product overflows).
+        let cap = (MAX_TOTAL_BINS as f32).sqrt().floor().max(1.0);
+        let grid_width = raw_grid_width.clamp(1.0, cap).floor() as u32;
+        let grid_height = raw_grid_height.clamp(1.0, cap).floor() as u32;
+
+        let mut params = Self {
             num_particles: config.num_particles,
             cell_size,
             grid_width,
             grid_height,
+        };
+
+        // Final guard: if the product still exceeds the cap (e.g. both
+        // dimensions near the per-axis cap), shrink the larger axis.
+        while (grid_width as u64) * (params.grid_height as u64) > MAX_TOTAL_BINS as u64
+            && params.grid_height > 1
+        {
+            params.grid_height /= 2;
         }
+
+        params
     }
 
     /// Get total number of bins.
     pub fn total_bins(&self) -> u32 {
-        self.grid_width * self.grid_height
+        // Checked multiply first; fall back to saturated product on overflow.
+        self.grid_width
+            .checked_mul(self.grid_height)
+            .unwrap_or(u32::MAX)
+            .min(MAX_TOTAL_BINS)
     }
 }
 
@@ -828,11 +862,17 @@ impl SimulationBuffers {
         queue.write_buffer(&self.type_sizes, 0, bytemuck::cast_slice(sizes));
     }
 
-    /// Update obstacle data buffer.
-    pub fn update_obstacles(&self, queue: &Queue, obstacles: &[ObstacleData], _count: u32) {
+    /// Update obstacle data buffer and set the live obstacle count.
+    ///
+    /// The count is the minimum of the slice length and `MAX_OBSTACLES`;
+    /// surplus entries are dropped. The GPU buffer is only written when
+    /// `obstacles` is non-empty, but `num_obstacles` is always updated so
+    /// the SimParams uniform reflects the actual count visible to shaders.
+    pub fn update_obstacles(&mut self, queue: &Queue, obstacles: &[ObstacleData]) {
+        let len = obstacles.len().min(MAX_OBSTACLES as usize) as u32;
+        self.num_obstacles = len;
         if !obstacles.is_empty() {
-            let len = obstacles.len().min(MAX_OBSTACLES);
-            queue.write_buffer(&self.obstacles, 0, bytemuck::cast_slice(&obstacles[..len]));
+            queue.write_buffer(&self.obstacles, 0, bytemuck::cast_slice(&obstacles[..len as usize]));
         }
     }
 
@@ -922,8 +962,7 @@ impl SimulationBuffers {
                     vx: vels[i].vx.to_f32(),
                     vy: vels[i].vy.to_f32(),
                     particle_type: pos_types[i].particle_type,
-                    _padding1: [0; 3],
-                    _padding2: [0; 4],
+                    _padding: [0; 3],
                 });
             }
         } else {
@@ -936,8 +975,7 @@ impl SimulationBuffers {
                     vx: vels[i].vx,
                     vy: vels[i].vy,
                     particle_type: pos_types[i].particle_type,
-                    _padding1: [0; 3],
-                    _padding2: [0; 4],
+                    _padding: [0; 3],
                 });
             }
         }
@@ -998,8 +1036,6 @@ pub struct SpatialHashBuffers {
     pub params: Buffer,
     /// Total bins uniform (for clear shader).
     pub total_bins_uniform: Buffer,
-    /// Prefix sum step size uniform (legacy, kept for compatibility).
-    pub step_size_uniform: Buffer,
     /// Pre-allocated step size uniforms for each prefix sum pass.
     /// This allows all passes to be added to a single encoder without
     /// having to submit between passes for uniform updates.
@@ -1048,13 +1084,6 @@ impl SpatialHashBuffers {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        // Step size uniform for prefix sum (legacy)
-        let step_size_uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Step Size Uniform"),
-            contents: bytemuck::bytes_of(&1u32),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
-
         // Pre-allocate step size uniforms for all possible prefix sum passes.
         // We allocate for the maximum (32 passes) to handle any cell size changes
         // without needing to reallocate buffers. Each buffer is just 4 bytes.
@@ -1075,7 +1104,6 @@ impl SpatialHashBuffers {
             bin_counts_b,
             params,
             total_bins_uniform,
-            step_size_uniform,
             step_size_uniforms,
             spatial_params,
             current_offset_buffer: 0,
@@ -1098,11 +1126,6 @@ impl SpatialHashBuffers {
 
         let total_bins = self.spatial_params.total_bins() + 1;
         queue.write_buffer(&self.total_bins_uniform, 0, bytemuck::bytes_of(&total_bins));
-    }
-
-    /// Update step size for prefix sum pass.
-    pub fn update_step_size(&self, queue: &Queue, step_size: u32) {
-        queue.write_buffer(&self.step_size_uniform, 0, bytemuck::bytes_of(&step_size));
     }
 
     /// Get total number of bins (including end offset element).
@@ -1308,6 +1331,86 @@ mod tests {
             80,
             "SimParamsUniform must be exactly 80 bytes (WGSL 16-byte uniform alignment)"
         );
+    }
+
+    /// `BrushRenderUniform` must match the WGSL `BrushRenderParams` struct
+    /// in `shaders/brush_circle.wgsl`. The WGSL layout has 13 scalar fields
+    /// followed by `_padding: vec3<f32>` — vec3's 16-byte alignment inserts a
+    /// 12-byte implicit gap before the padding (offsets 52..64), then vec3
+    /// occupies 64..76 and the struct rounds up to 80 bytes. The Rust struct
+    /// mirrors this with explicit `_padding1: [f32; 3]` (52..64) and
+    /// `_padding2: [f32; 4]` (64..80). A single missed padding field or
+    /// reorder silently corrupts the brush circle rendering.
+    #[test]
+    fn brush_render_uniform_layout_matches_wgsl() {
+        // Field offsets — verified against `shaders/brush_circle.wgsl`.
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, pos_x), 0);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, pos_y), 4);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, radius), 8);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, color_r), 12);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, color_g), 16);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, color_b), 20);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, color_a), 24);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, is_visible), 28);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, world_width), 32);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, world_height), 36);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, camera_zoom), 40);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, camera_offset_x), 44);
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, camera_offset_y), 48);
+        // _padding1 lives in the 12-byte gap WGSL inserts before `vec3<f32>`
+        // (vec3 has 16-byte alignment, so it jumps from offset 52 to 64).
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, _padding1), 52);
+        // _padding2 mirrors the trailing vec3<f32> + final round-up to 80.
+        assert_eq!(core::mem::offset_of!(BrushRenderUniform, _padding2), 64);
+        // Total: 80 bytes (16-byte multiple required by WGSL uniform layout).
+        assert_eq!(
+            core::mem::size_of::<BrushRenderUniform>(),
+            80,
+            "BrushRenderUniform must be exactly 80 bytes (matches WGSL BrushRenderParams)"
+        );
+    }
+
+    /// `SpatialParamsUniform::from_config` must not produce a `total_bins`
+    /// that overflows `u32` or exceeds the GPU memory cap (`MAX_TOTAL_BINS`).
+    /// A UI slider can drive `spatial_hash_cell_size` low enough that the
+    /// grid dimensions product would otherwise wrap or request an absurd
+    /// allocation (ARC-025, paired with SEC-005 on the CPU side).
+    #[test]
+    fn spatial_params_uniform_clamps_total_bins_under_hostile_cell_size() {
+        let mut config = SimulationConfig::default();
+        // Force a tiny cell size and huge world so the raw product overflows.
+        config.world_size = glam::Vec2::new(1.0e7, 1.0e7);
+        config.spatial_hash_cell_size = 0.001;
+
+        let params = SpatialParamsUniform::from_config(&config, 0.0);
+
+        // Each axis clamped to sqrt(MAX_TOTAL_BINS) ~= 4096.
+        assert!(
+            params.grid_width <= 4096,
+            "grid_width unclamped: {}",
+            params.grid_width
+        );
+        assert!(
+            params.grid_height <= 4096,
+            "grid_height unclamped: {}",
+            params.grid_height
+        );
+        assert!(
+            params.total_bins() <= MAX_TOTAL_BINS,
+            "total_bins {} exceeds cap {}",
+            params.total_bins(),
+            MAX_TOTAL_BINS
+        );
+    }
+
+    /// Sanity check: a typical configuration is unaffected by the clamp.
+    #[test]
+    fn spatial_params_uniform_passes_typical_config_unclamped() {
+        let config = SimulationConfig::default();
+        // Default world (~1280x720) / default cell size ~30 → ~43 x ~24 bins.
+        let params = SpatialParamsUniform::from_config(&config, 30.0);
+        assert!(params.grid_width >= 1 && params.grid_height >= 1);
+        assert!(params.total_bins() < 10_000);
     }
 
     /// Each of the seven WGSL shader files that declare `struct SimParams`
