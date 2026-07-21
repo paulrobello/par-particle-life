@@ -18,7 +18,7 @@ winit = "0.30"
 # GUI
 egui = "0.34"
 egui-wgpu = "0.34"
-egui-winit = "0.34"
+egui-winit = "0.35"
 
 # Math and utilities
 glam = { version = "0.32", features = ["serde"] }
