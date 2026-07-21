@@ -21,7 +21,7 @@ jobs:
 
     steps:
     # actions/checkout v6 — SHA-pinned per ARC-031 / SEC-008.
-    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     # dtolnay/rust-toolchain stable — SHA-pinned per ARC-031 / SEC-008.
     - name: Install Rust toolchain
@@ -65,7 +65,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
@@ -92,7 +92,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Install Rust 1.93.0 (declared MSRV)
       uses: dtolnay/rust-toolchain@1.93.0
@@ -111,7 +111,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Install cargo-audit
       # Pinned to commit SHA of taiki-e/install-action v2.84.0 (ARC-031 / SEC-008).
