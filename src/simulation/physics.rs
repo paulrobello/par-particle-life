@@ -48,7 +48,16 @@ impl PhysicsEngine {
             let cell_size = radius_matrix
                 .max_interaction_radius()
                 .max(config.spatial_hash_cell_size);
-            self.spatial_hash = Some(SpatialHash::build(particles, cell_size, config.world_size));
+            // SEC-005: build can fail if world_size is non-finite or the implied
+            // grid would overflow usize / exceed the cell cap. Fall back to the
+            // brute-force path on failure rather than panicking.
+            match SpatialHash::build(particles, cell_size, config.world_size) {
+                Ok(hash) => self.spatial_hash = Some(hash),
+                Err(e) => {
+                    log::warn!("SpatialHash build failed: {e}; falling back to brute force");
+                    self.spatial_hash = None;
+                }
+            }
         } else {
             self.spatial_hash = None;
         }

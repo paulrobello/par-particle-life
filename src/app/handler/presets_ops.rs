@@ -111,6 +111,16 @@ impl AppHandler {
     pub(crate) fn load_preset_from_file(&mut self, path: &Path) {
         match Preset::load_from_file(path) {
             Ok(preset) => {
+                // SEC-001 / ARC-016: gate application on validate() + matrix-shape
+                // checks before mutating any live state. A crafted or corrupt
+                // preset (num_particles=4294967295, mismatched matrix size, NaN
+                // values) must surface a clean user-facing error rather than
+                // OOM-killing the app or panicking on a bounds check.
+                if let Err(e) = preset.validate() {
+                    self.preset_status = format!("Validation error: {e}");
+                    log::error!("Rejected preset from {}: {e}", path.display());
+                    return;
+                }
                 let display_name = path
                     .file_stem()
                     .map(|name| name.to_string_lossy().into_owned())
@@ -250,6 +260,111 @@ mod tests {
         assert_eq!(handler.app.sim_config.num_particles, 1_000);
         assert_eq!(handler.app.sim_config.force_factor, 2.5);
         assert_eq!(handler.preset_status, "Loaded: dropped-preset");
+
+        fs::remove_dir_all(&dir).expect("cleanup preset test dir");
+    }
+
+    #[test]
+    fn load_preset_from_file_rejects_hostile_num_particles_with_validation_error() {
+        // SEC-001: a crafted preset with num_particles = u32::MAX must not
+        // OOM the app. The validation gate must surface a clean user-facing
+        // error and leave the live simulation state untouched.
+        let dir = std::env::temp_dir().join(format!(
+            "par-particle-life-hostile-preset-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create preset test dir");
+        let path = dir.join("hostile-preset.json");
+
+        let mut config = SimulationConfig::default();
+        config.num_particles = u32::MAX;
+        config.num_types = 3;
+        // Matrix shape matches the (invalid) config so the validate() failure
+        // is specifically about num_particles, not shape.
+        let matrix = InteractionMatrix::filled(3, 0.25);
+        let radii = RadiusMatrix::default_for_size(3);
+        let preset = Preset::new(
+            "Hostile",
+            &config,
+            &matrix,
+            &radii,
+            &matrix,
+            Default::default(),
+            0.0,
+            RuleType::Random,
+            PaletteType::Rainbow,
+            None,
+            PositionPattern::Disk,
+            &[1.0, 1.0, 1.0],
+            &[1.0, 1.0, 1.0],
+            &[],
+        );
+        preset.save_to_file(&path).expect("save hostile preset");
+
+        let mut handler = AppHandler::new(true);
+        let original_num_particles = handler.app.sim_config.num_particles;
+        handler.load_preset_from_file(&path);
+
+        assert!(
+            handler.preset_status.starts_with("Validation error"),
+            "expected validation error, got: {}",
+            handler.preset_status
+        );
+        // Live state must be untouched.
+        assert_eq!(
+            handler.app.sim_config.num_particles, original_num_particles,
+            "hostile preset must not mutate live state"
+        );
+
+        fs::remove_dir_all(&dir).expect("cleanup preset test dir");
+    }
+
+    #[test]
+    fn load_preset_from_file_rejects_matrix_shape_mismatch() {
+        // A preset whose interaction_matrix.data.len() != size*size currently
+        // panics on access; the validation gate must catch it first.
+        let dir = std::env::temp_dir().join(format!(
+            "par-particle-life-shape-mismatch-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create preset test dir");
+        let path = dir.join("shape-mismatch.json");
+
+        let config = SimulationConfig {
+            num_types: 3,
+            num_particles: 1_000,
+            ..SimulationConfig::default()
+        };
+        // 4x4 matrix attached to a 3-type config.
+        let bad_matrix = InteractionMatrix::filled(4, 0.25);
+        let radii = RadiusMatrix::default_for_size(3);
+        let preset = Preset::new(
+            "ShapeMismatch",
+            &config,
+            &bad_matrix,
+            &radii,
+            &bad_matrix,
+            Default::default(),
+            0.0,
+            RuleType::Random,
+            PaletteType::Rainbow,
+            None,
+            PositionPattern::Disk,
+            &[1.0, 1.0, 1.0],
+            &[1.0, 1.0, 1.0],
+            &[],
+        );
+        preset.save_to_file(&path).expect("save mismatched preset");
+
+        let mut handler = AppHandler::new(true);
+        handler.load_preset_from_file(&path);
+        assert!(
+            handler.preset_status.starts_with("Validation error"),
+            "expected shape-mismatch validation error, got: {}",
+            handler.preset_status
+        );
 
         fs::remove_dir_all(&dir).expect("cleanup preset test dir");
     }

@@ -6,6 +6,12 @@
 use super::Particle;
 use glam::Vec2;
 
+/// Hard cap on total grid cells to prevent OOM allocation when `world_size` is
+/// huge or `cell_size` is tiny (SEC-005). At ~24 bytes per empty `Vec<usize>`
+/// header, 4M cells is roughly 100 MB — far beyond any realistic config, but
+/// bounded enough that a corrupt `world_size = 1e30` cannot OOM the machine.
+const MAX_SPATIAL_HASH_CELLS: usize = 4_096_000;
+
 /// A spatial hash grid for efficient neighbor queries.
 ///
 /// The world is divided into cells of uniform size. Each cell stores
@@ -28,16 +34,55 @@ pub struct SpatialHash {
 impl SpatialHash {
     /// Build a spatial hash from a slice of particles.
     ///
+    /// Returns `Err` if `world_size` is non-finite/non-positive or if the
+    /// implied grid would overflow `usize` or exceed `MAX_SPATIAL_HASH_CELLS`.
+    /// Callers should fall back to brute-force neighbour search on error.
+    ///
     /// # Arguments
     /// * `particles` - Particles to index
     /// * `cell_size` - Size of each cell (should be >= max interaction radius)
     /// * `world_size` - Size of the world bounds
-    pub fn build(particles: &[Particle], cell_size: f32, world_size: Vec2) -> Self {
+    pub fn build(
+        particles: &[Particle],
+        cell_size: f32,
+        world_size: Vec2,
+    ) -> Result<Self, String> {
+        if !world_size.x.is_finite()
+            || !world_size.y.is_finite()
+            || world_size.x <= 0.0
+            || world_size.y <= 0.0
+        {
+            return Err(format!(
+                "SpatialHash world_size must be positive and finite, got ({}, {})",
+                world_size.x, world_size.y
+            ));
+        }
         let cell_size = cell_size.max(1.0); // Prevent division by zero
-        let grid_width = (world_size.x / cell_size).ceil() as usize;
-        let grid_height = (world_size.y / cell_size).ceil() as usize;
+        let grid_width = ((world_size.x / cell_size).ceil() as usize).max(1);
+        let grid_height = ((world_size.y / cell_size).ceil() as usize).max(1);
 
-        let mut cells = vec![Vec::new(); grid_width * grid_height];
+        let total_cells = grid_width.checked_mul(grid_height).ok_or_else(|| {
+            format!(
+                "SpatialHash grid {grid_width}x{grid_height} overflows usize \
+                 (world_size=({wx}, {wy}), cell_size={cs})",
+                wx = world_size.x,
+                wy = world_size.y,
+                cs = cell_size
+            )
+        })?;
+        if total_cells > MAX_SPATIAL_HASH_CELLS {
+            return Err(format!(
+                "SpatialHash grid {grid_width}x{grid_height} ({total_cells} cells) \
+                 exceeds limit of {MAX_SPATIAL_HASH_CELLS}; \
+                 increase cell_size or reduce world_size \
+                 (world_size=({wx}, {wy}), cell_size={cs})",
+                wx = world_size.x,
+                wy = world_size.y,
+                cs = cell_size
+            ));
+        }
+
+        let mut cells = vec![Vec::new(); total_cells];
 
         for (i, p) in particles.iter().enumerate() {
             let cell_x = ((p.x / cell_size) as usize).min(grid_width.saturating_sub(1));
@@ -49,13 +94,13 @@ impl SpatialHash {
             }
         }
 
-        Self {
+        Ok(Self {
             cell_size,
             grid_width,
             grid_height,
             cells,
             world_size,
-        }
+        })
     }
 
     /// Query all particle indices within a radius of a position.
@@ -211,7 +256,8 @@ mod tests {
     #[test]
     fn test_spatial_hash_build() {
         let particles = make_particles();
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0));
+        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+            .expect("build should succeed for sane inputs");
 
         assert!(hash.num_cells() > 0);
         let stats = hash.stats();
@@ -221,7 +267,8 @@ mod tests {
     #[test]
     fn test_query_radius() {
         let particles = make_particles();
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0));
+        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+            .expect("build should succeed for sane inputs");
 
         // Query near particles 0 and 1
         let nearby = hash.query_radius(Vec2::new(12.0, 10.0), 10.0, Vec2::new(100.0, 100.0), false);
@@ -235,7 +282,8 @@ mod tests {
     #[test]
     fn test_cell_index() {
         let particles = make_particles();
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0));
+        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+            .expect("build should succeed for sane inputs");
 
         assert!(hash.get_cell_index(10.0, 10.0).is_some());
         assert!(hash.get_cell_index(-5.0, 10.0).is_none());
@@ -248,12 +296,42 @@ mod tests {
             Particle::new(5.0, 50.0, 0),  // Near left edge
             Particle::new(95.0, 50.0, 1), // Near right edge
         ];
-        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0));
+        let hash = SpatialHash::build(&particles, 20.0, Vec2::new(100.0, 100.0))
+            .expect("build should succeed for sane inputs");
 
         // Query from particle 0, with wrapping should find particle 1
         let nearby = hash.query_radius(Vec2::new(5.0, 50.0), 15.0, Vec2::new(100.0, 100.0), true);
 
         // Both particles should be reachable through wrapping
         assert!(!nearby.is_empty());
+    }
+
+    #[test]
+    fn test_build_rejects_pathological_world_size() {
+        // SEC-005: world_size.x = 1e30 with cell_size = 1.0 must not allocate
+        // gigabytes of cells. The build must return Err instead.
+        let particles = make_particles();
+        let err = SpatialHash::build(&particles, 1.0, Vec2::new(1e30, 1e30))
+            .expect_err("pathological world_size must be rejected");
+        assert!(
+            err.contains("exceeds limit") || err.contains("overflows usize"),
+            "expected overflow/cap error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_build_rejects_non_finite_world_size() {
+        let particles = make_particles();
+        let err = SpatialHash::build(&particles, 10.0, Vec2::new(f32::NAN, 100.0))
+            .expect_err("NaN world_size must be rejected");
+        assert!(err.contains("finite"), "expected finite-check error, got: {err}");
+    }
+
+    #[test]
+    fn test_build_rejects_zero_world_size() {
+        let particles = make_particles();
+        let err = SpatialHash::build(&particles, 10.0, Vec2::new(0.0, 100.0))
+            .expect_err("zero world_size must be rejected");
+        assert!(err.contains("positive"), "expected positive-check error, got: {err}");
     }
 }

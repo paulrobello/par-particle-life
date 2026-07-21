@@ -136,12 +136,108 @@ impl Preset {
     }
 
     /// Load a preset from a JSON file.
+    ///
+    /// Enforces a file-size cap (1 MiB) before reading to avoid OOM on a
+    /// crafted `.json` (SEC-001). A legitimate preset is at most a few KB.
     pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
+        const MAX_PRESET_FILE_SIZE: u64 = 1 * 1024 * 1024; // 1 MiB
+        let file_size = std::fs::metadata(path)
+            .with_context(|| format!("Failed to stat preset at {}", path.display()))?
+            .len();
+        if file_size > MAX_PRESET_FILE_SIZE {
+            anyhow::bail!(
+                "Preset file {} is {} bytes, exceeds the {} byte limit",
+                path.display(),
+                file_size,
+                MAX_PRESET_FILE_SIZE
+            );
+        }
         let json = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read preset from {}", path.display()))?;
         let preset: Self = serde_json::from_str(&json).context("Failed to deserialize preset")?;
         Ok(preset)
+    }
+
+    /// Validate the loaded preset before it is applied to the live simulation.
+    ///
+    /// Checks:
+    /// - `sim_config.validate()` (num_particles/num_types/force_factor/friction/
+    ///   repel_strength/world_size sanity — SEC-001 / ARC-016)
+    /// - Interaction matrix shape (`size * size == data.len()`) — a mismatch
+    ///   currently panics on access.
+    /// - Radius matrix shape and consistency.
+    /// - `interaction_matrix.validate()` and `radius_matrix.validate()` for
+    ///   NaN/Inf/out-of-range values.
+    /// - `type_masses` / `type_sizes` lengths match `num_types`.
+    pub fn validate(&self) -> Result<()> {
+        self.sim_config.validate().map_err(|e| {
+            anyhow::anyhow!("Preset '{}' has invalid simulation config: {e}", self.name)
+        })?;
+
+        let n = self.sim_config.num_types as usize;
+        if self.interaction_matrix.size != n
+            || self.interaction_matrix.data.len() != n * n
+        {
+            anyhow::bail!(
+                "Preset '{}' interaction_matrix shape mismatch: size={}, data.len={}, \
+                 expected {}x{} ({})",
+                self.name,
+                self.interaction_matrix.size,
+                self.interaction_matrix.data.len(),
+                n,
+                n,
+                n * n
+            );
+        }
+        self.interaction_matrix.validate().map_err(|e| {
+            anyhow::anyhow!(
+                "Preset '{}' interaction_matrix has invalid values: {e}",
+                self.name
+            )
+        })?;
+
+        if self.radius_matrix.size != n
+            || self.radius_matrix.min_radius.len() != n * n
+            || self.radius_matrix.max_radius.len() != n * n
+        {
+            anyhow::bail!(
+                "Preset '{}' radius_matrix shape mismatch: size={}, min_len={}, max_len={}, \
+                 expected {}x{} ({})",
+                self.name,
+                self.radius_matrix.size,
+                self.radius_matrix.min_radius.len(),
+                self.radius_matrix.max_radius.len(),
+                n,
+                n,
+                n * n
+            );
+        }
+        self.radius_matrix.validate().map_err(|e| {
+            anyhow::anyhow!(
+                "Preset '{}' radius_matrix has invalid values: {e}",
+                self.name
+            )
+        })?;
+
+        if !self.type_masses.is_empty() && self.type_masses.len() != n {
+            anyhow::bail!(
+                "Preset '{}' type_masses length {} does not match num_types {}",
+                self.name,
+                self.type_masses.len(),
+                n
+            );
+        }
+        if !self.type_sizes.is_empty() && self.type_sizes.len() != n {
+            anyhow::bail!(
+                "Preset '{}' type_sizes length {} does not match num_types {}",
+                self.name,
+                self.type_sizes.len(),
+                n
+            );
+        }
+
+        Ok(())
     }
 
     /// Get the default presets directory.

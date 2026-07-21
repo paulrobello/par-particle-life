@@ -90,12 +90,28 @@ impl fmt::Display for ExprError {
 
 impl std::error::Error for ExprError {}
 
+/// Maximum nesting depth for the recursive-descent parser and evaluator.
+/// Bounds stack usage on hostile or corrupt input (SEC-002 / ARC-005).
+const MAX_EXPR_DEPTH: u32 = 256;
+
+/// Maximum accepted input length for `Expr::parse`, in bytes.
+/// A legitimate rule expression is at most a few hundred bytes; 4 KB is far
+/// beyond any realistic use and rejects pathologically large inputs.
+const MAX_EXPR_INPUT_LEN: usize = 4 * 1024;
+
 impl Expr {
     /// Parse an expression string into an AST.
     pub fn parse(input: &str) -> Result<Self, ExprError> {
+        if input.len() > MAX_EXPR_INPUT_LEN {
+            return Err(ExprError::Parse(format!(
+                "expression input length {} exceeds maximum of {} bytes",
+                input.len(),
+                MAX_EXPR_INPUT_LEN
+            )));
+        }
         let tokens = tokenize(input)?;
         let mut parser = Parser::new(&tokens);
-        let expr = parser.parse_expr()?;
+        let expr = parser.parse_expr(0)?;
         if parser.pos < tokens.len() {
             return Err(ExprError::Parse(format!(
                 "Unexpected token '{}' at position {}",
@@ -108,14 +124,21 @@ impl Expr {
 
     /// Evaluate the expression with the given context.
     pub fn eval(&self, ctx: &EvalContext) -> Result<f32, ExprError> {
+        self.eval_depth(ctx, 0)
+    }
+
+    fn eval_depth(&self, ctx: &EvalContext, depth: u32) -> Result<f32, ExprError> {
+        if depth > MAX_EXPR_DEPTH {
+            return Err(ExprError::Eval("expression too deeply nested".into()));
+        }
         match self {
             Expr::Literal(v) => Ok(*v),
             Expr::Var(Var::I) => Ok(ctx.i),
             Expr::Var(Var::J) => Ok(ctx.j),
             Expr::Var(Var::N) => Ok(ctx.n),
             Expr::BinOp { op, left, right } => {
-                let l = left.eval(ctx)?;
-                let r = right.eval(ctx)?;
+                let l = left.eval_depth(ctx, depth + 1)?;
+                let r = right.eval_depth(ctx, depth + 1)?;
                 match op {
                     BinOp::Add => Ok(l + r),
                     BinOp::Sub => Ok(l - r),
@@ -142,53 +165,66 @@ impl Expr {
                     BinOp::Ge => Ok(if l >= r { 1.0 } else { 0.0 }),
                 }
             }
-            Expr::UnaryNeg(inner) => Ok(-inner.eval(ctx)?),
+            Expr::UnaryNeg(inner) => Ok(-inner.eval_depth(ctx, depth + 1)?),
             Expr::Ternary {
                 cond,
                 then_expr,
                 else_expr,
             } => {
-                let c = cond.eval(ctx)?;
+                let c = cond.eval_depth(ctx, depth + 1)?;
                 if c != 0.0 {
-                    then_expr.eval(ctx)
+                    then_expr.eval_depth(ctx, depth + 1)
                 } else {
-                    else_expr.eval(ctx)
+                    else_expr.eval_depth(ctx, depth + 1)
                 }
             }
-            Expr::Call { func, args } => eval_func(*func, args, ctx),
+            Expr::Call { func, args } => eval_func(*func, args, ctx, depth + 1),
         }
     }
 }
 
-fn eval_func(func: Func, args: &[Expr], ctx: &EvalContext) -> Result<f32, ExprError> {
+fn eval_func(
+    func: Func,
+    args: &[Expr],
+    ctx: &EvalContext,
+    depth: u32,
+) -> Result<f32, ExprError> {
     match func {
         Func::Abs => {
-            let v = expect_arg(func, args, 1, ctx)?;
+            let v = expect_arg(func, args, 1, ctx, depth)?;
             Ok(v[0].abs())
         }
         Func::Sin => {
-            let v = expect_arg(func, args, 1, ctx)?;
+            let v = expect_arg(func, args, 1, ctx, depth)?;
             Ok(v[0].sin())
         }
         Func::Cos => {
-            let v = expect_arg(func, args, 1, ctx)?;
+            let v = expect_arg(func, args, 1, ctx, depth)?;
             Ok(v[0].cos())
         }
         Func::Random => {
-            let _ = expect_arg(func, args, 0, ctx)?;
+            let _ = expect_arg(func, args, 0, ctx, depth)?;
             Ok(rand::random::<f32>() * 2.0 - 1.0)
         }
         Func::Min => {
-            let v = expect_arg(func, args, 2, ctx)?;
+            let v = expect_arg(func, args, 2, ctx, depth)?;
             Ok(v[0].min(v[1]))
         }
         Func::Max => {
-            let v = expect_arg(func, args, 2, ctx)?;
+            let v = expect_arg(func, args, 2, ctx, depth)?;
             Ok(v[0].max(v[1]))
         }
         Func::Pow => {
-            let v = expect_arg(func, args, 2, ctx)?;
-            Ok(v[0].powf(v[1]))
+            let v = expect_arg(func, args, 2, ctx, depth)?;
+            let (base, exp) = (v[0], v[1]);
+            // powf() on a negative base with a non-integral exponent yields NaN;
+            // surface a clear error instead of poisoning the matrix (ARC-006).
+            if base < 0.0 && exp.fract() != 0.0 {
+                return Err(ExprError::Eval(format!(
+                    "pow() of negative base ({base}) with non-integral exponent ({exp}) produces NaN"
+                )));
+            }
+            Ok(base.powf(exp))
         }
     }
 }
@@ -198,6 +234,7 @@ fn expect_arg(
     args: &[Expr],
     expected: usize,
     ctx: &EvalContext,
+    depth: u32,
 ) -> Result<Vec<f32>, ExprError> {
     if args.len() != expected {
         return Err(ExprError::Eval(format!(
@@ -205,7 +242,7 @@ fn expect_arg(
             args.len()
         )));
     }
-    args.iter().map(|a| a.eval(ctx)).collect()
+    args.iter().map(|a| a.eval_depth(ctx, depth)).collect()
 }
 
 // === Tokenizer ===
@@ -427,17 +464,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_expr(&mut self) -> Result<Expr, ExprError> {
-        self.parse_ternary()
+    fn parse_expr(&mut self, depth: u32) -> Result<Expr, ExprError> {
+        if depth > MAX_EXPR_DEPTH {
+            return Err(ExprError::Parse("expression too deeply nested".into()));
+        }
+        self.parse_ternary(depth)
     }
 
-    fn parse_ternary(&mut self) -> Result<Expr, ExprError> {
-        let cond = self.parse_comparison()?;
+    fn parse_ternary(&mut self, depth: u32) -> Result<Expr, ExprError> {
+        let cond = self.parse_comparison(depth)?;
         if self.peek() == Some(&Token::Question) {
             self.advance();
-            let then_expr = self.parse_expr()?;
+            let then_expr = self.parse_expr(depth + 1)?;
             self.expect(&Token::Colon)?;
-            let else_expr = self.parse_expr()?;
+            let else_expr = self.parse_expr(depth + 1)?;
             Ok(Expr::Ternary {
                 cond: Box::new(cond),
                 then_expr: Box::new(then_expr),
@@ -448,8 +488,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_comparison(&mut self) -> Result<Expr, ExprError> {
-        let left = self.parse_additive()?;
+    fn parse_comparison(&mut self, depth: u32) -> Result<Expr, ExprError> {
+        let left = self.parse_additive(depth)?;
         let cmp_tokens = [
             Token::Eq,
             Token::Ne,
@@ -470,7 +510,7 @@ impl<'a> Parser<'a> {
                 Token::Ge => BinOp::Ge,
                 _ => unreachable!(),
             };
-            let right = self.parse_additive()?;
+            let right = self.parse_additive(depth)?;
             return Ok(Expr::BinOp {
                 op,
                 left: Box::new(left),
@@ -480,15 +520,15 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_additive(&mut self) -> Result<Expr, ExprError> {
-        let mut left = self.parse_multiplicative()?;
+    fn parse_additive(&mut self, depth: u32) -> Result<Expr, ExprError> {
+        let mut left = self.parse_multiplicative(depth)?;
         while let Some(Token::Plus) | Some(Token::Minus) = self.peek() {
             let op = match self.advance().unwrap() {
                 Token::Plus => BinOp::Add,
                 Token::Minus => BinOp::Sub,
                 _ => unreachable!(),
             };
-            let right = self.parse_multiplicative()?;
+            let right = self.parse_multiplicative(depth)?;
             left = Expr::BinOp {
                 op,
                 left: Box::new(left),
@@ -498,8 +538,8 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<Expr, ExprError> {
-        let mut left = self.parse_unary()?;
+    fn parse_multiplicative(&mut self, depth: u32) -> Result<Expr, ExprError> {
+        let mut left = self.parse_unary(depth)?;
         while let Some(Token::Star) | Some(Token::Slash) | Some(Token::Percent) = self.peek() {
             let op = match self.advance().unwrap() {
                 Token::Star => BinOp::Mul,
@@ -507,7 +547,7 @@ impl<'a> Parser<'a> {
                 Token::Percent => BinOp::Mod,
                 _ => unreachable!(),
             };
-            let right = self.parse_unary()?;
+            let right = self.parse_unary(depth)?;
             left = Expr::BinOp {
                 op,
                 left: Box::new(left),
@@ -517,17 +557,20 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<Expr, ExprError> {
+    fn parse_unary(&mut self, depth: u32) -> Result<Expr, ExprError> {
+        if depth > MAX_EXPR_DEPTH {
+            return Err(ExprError::Parse("expression too deeply nested".into()));
+        }
         if self.peek() == Some(&Token::Minus) {
             self.advance();
-            let inner = self.parse_unary()?;
+            let inner = self.parse_unary(depth + 1)?;
             Ok(Expr::UnaryNeg(Box::new(inner)))
         } else {
-            self.parse_primary()
+            self.parse_primary(depth)
         }
     }
 
-    fn parse_primary(&mut self) -> Result<Expr, ExprError> {
+    fn parse_primary(&mut self, depth: u32) -> Result<Expr, ExprError> {
         match self.peek() {
             Some(Token::Number(_)) => {
                 let val = match self.advance().unwrap() {
@@ -557,10 +600,10 @@ impl<'a> Parser<'a> {
                     self.advance();
                     let mut args = Vec::new();
                     if self.peek() != Some(&Token::RParen) {
-                        args.push(self.parse_expr()?);
+                        args.push(self.parse_expr(depth + 1)?);
                         while self.peek() == Some(&Token::Comma) {
                             self.advance();
-                            args.push(self.parse_expr()?);
+                            args.push(self.parse_expr(depth + 1)?);
                         }
                     }
                     self.expect(&Token::RParen)?;
@@ -579,7 +622,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::LParen) => {
                 self.advance();
-                let expr = self.parse_expr()?;
+                let expr = self.parse_expr(depth + 1)?;
                 self.expect(&Token::RParen)?;
                 Ok(expr)
             }
@@ -709,5 +752,73 @@ mod tests {
     #[test]
     fn test_pow() {
         assert!((eval_str("pow(2, 3)", 0.0, 0.0, 0.0) - 8.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_deeply_nested_parens_rejected() {
+        // 300 nested parens = 601 bytes (under the 4 KB length cap) but well over
+        // the MAX_EXPR_DEPTH (256) limit, so this exercises the depth guard
+        // rather than the input-length cap.
+        let depth: usize = 300;
+        let hostile = "(".repeat(depth);
+        let close = ")".repeat(depth);
+        let input = format!("{hostile}0{close}");
+        let err = Expr::parse(&input).expect_err("deeply nested input must be rejected");
+        match err {
+            ExprError::Parse(msg) => assert!(
+                msg.contains("too deeply nested"),
+                "expected depth-guard message, got: {msg}"
+            ),
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_pow_negative_base_nonintegral_exponent_errors() {
+        // pow(-1, 0.5) would produce NaN; the Func::Pow gate must surface a clean error.
+        let expr = Expr::parse("pow(-1.0, 0.5)").unwrap();
+        let ctx = EvalContext { i: 0.0, j: 0.0, n: 0.0 };
+        let err = expr.eval(&ctx).expect_err("pow(-1, 0.5) must error");
+        match err {
+            ExprError::Eval(msg) => assert!(
+                msg.contains("pow() of negative base"),
+                "expected Pow-gate message, got: {msg}"
+            ),
+            other => panic!("expected Eval error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_pow_huge_exponent_propagates_as_eval_error_at_callers() {
+        // pow(2, 99999) overflows f32 to +Inf. The Pow gate allows integral exponents,
+        // so the result is Inf here; callers (CustomGenerator::generate) catch Inf via
+        // matrix.validate(). This test pins the evaluator behaviour: the gate does not
+        // spuriously reject large integral exponents.
+        let expr = Expr::parse("pow(2.0, 99999.0)").unwrap();
+        let ctx = EvalContext { i: 0.0, j: 0.0, n: 0.0 };
+        let v = expr.eval(&ctx).unwrap();
+        assert!(v.is_infinite(), "pow(2, 99999) should be +Inf, got {v}");
+    }
+
+    #[test]
+    fn test_oversized_input_rejected() {
+        // Input longer than 4 KB must be rejected before parsing.
+        let oversized = "0+".repeat(3_000); // 6 KB
+        let err = Expr::parse(&oversized).expect_err("oversized input must be rejected");
+        match err {
+            ExprError::Parse(msg) => assert!(
+                msg.contains("exceeds maximum"),
+                "expected length-cap message, got: {msg}"
+            ),
+            other => panic!("expected Parse error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_reasonable_nesting_parses_fine() {
+        // A modest nesting level (well under the 256 cap) must still parse and eval.
+        let expr = Expr::parse("((((i + j))))").unwrap();
+        let ctx = EvalContext { i: 2.0, j: 3.0, n: 0.0 };
+        assert!((expr.eval(&ctx).unwrap() - 5.0).abs() < 0.001);
     }
 }

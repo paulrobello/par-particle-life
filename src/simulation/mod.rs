@@ -185,6 +185,16 @@ impl SimulationConfig {
         if self.num_particles == 0 {
             return Err("num_particles must be greater than 0".to_string());
         }
+        // SEC-001: enforce the documented upper bound (field doc: 16 - 1,048,576).
+        // A crafted preset with num_particles = u32::MAX OOM-kills the app on
+        // buffer allocation; rejecting at validate() surfaces a clean error.
+        const MAX_NUM_PARTICLES: u32 = 1_048_576;
+        if self.num_particles > MAX_NUM_PARTICLES {
+            return Err(format!(
+                "num_particles ({}) exceeds maximum of {MAX_NUM_PARTICLES}",
+                self.num_particles
+            ));
+        }
         if self.num_types == 0 || self.num_types > 16 {
             return Err("num_types must be between 1 and 16".to_string());
         }

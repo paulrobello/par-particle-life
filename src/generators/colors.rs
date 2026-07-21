@@ -155,7 +155,7 @@ impl CustomPalette {
     }
 }
 
-fn safe_palette_file_stem(name: &str) -> String {
+pub(crate) fn safe_palette_file_stem(name: &str) -> String {
     name.chars()
         .map(|ch| {
             if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {

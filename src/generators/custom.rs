@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use super::colors::safe_palette_file_stem;
 use super::expression::{EvalContext, Expr, ExprError};
 use crate::simulation::InteractionMatrix;
 
@@ -26,16 +27,19 @@ pub struct CustomGenerator {
 
 impl CustomGenerator {
     /// Get the custom generators directory path.
-    pub fn custom_dir() -> PathBuf {
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("par-particle-life")
-            .join("custom-generators")
+    pub fn custom_dir() -> anyhow::Result<PathBuf> {
+        let data_dir = dirs::data_dir().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not determine user data directory for custom generators \
+                 (dirs::data_dir() returned None)"
+            )
+        })?;
+        Ok(data_dir.join("par-particle-life").join("custom-generators"))
     }
 
     /// Ensure the custom generators directory exists.
     pub fn ensure_dir() -> anyhow::Result<PathBuf> {
-        let dir = Self::custom_dir();
+        let dir = Self::custom_dir()?;
         if !dir.exists() {
             std::fs::create_dir_all(&dir)?;
         }
@@ -44,7 +48,7 @@ impl CustomGenerator {
 
     /// List all custom generators from the directory.
     pub fn list() -> anyhow::Result<Vec<CustomGenerator>> {
-        let dir = Self::custom_dir();
+        let dir = Self::custom_dir()?;
         if !dir.exists() {
             return Ok(Vec::new());
         }
@@ -71,7 +75,10 @@ impl CustomGenerator {
     /// Save this generator to a JSON file in the custom generators directory.
     pub fn save_to_file(&self) -> anyhow::Result<()> {
         let dir = Self::ensure_dir()?;
-        let filename = self.name.to_lowercase().replace([' ', '/'], "-");
+        // Reuse the palette sanitizer's alphanumeric allowlist so hostile names
+        // (e.g. "..", "\\server\share", absolute paths) cannot escape the data dir
+        // or collide with sibling files (SEC-006 / ARC-020).
+        let filename = safe_palette_file_stem(&self.name);
         let path = dir.join(format!("{filename}.json"));
         let json = serde_json::to_string_pretty(self)?;
         std::fs::write(&path, json)?;
@@ -111,6 +118,28 @@ impl CustomGenerator {
 
         for val in &mut matrix.data {
             *val = (*val * 100.0).round() / 100.0;
+        }
+
+        // ARC-006: a NaN/Inf in any cell poisons the GPU compute shader with no
+        // diagnostic. matrix.validate() catches NaN/Inf and out-of-range values;
+        // surface the offending (i, j) so the user can fix the expression.
+        if let Err(msg) = matrix.validate() {
+            for i in 0..num_types {
+                for j in 0..num_types {
+                    let val = matrix.get(i, j);
+                    if val.is_nan() || val.is_infinite() {
+                        return Err(ExprError::Eval(format!(
+                            "expression produced {val} at ({i}, {j}) \
+                             for '{name}' — likely pow() of negative base or overflow ({msg})",
+                            name = self.name
+                        )));
+                    }
+                }
+            }
+            return Err(ExprError::Eval(format!(
+                "expression for '{}' produced an out-of-range value: {msg}",
+                self.name
+            )));
         }
 
         Ok(matrix)
@@ -188,5 +217,47 @@ mod tests {
 
         let m2 = generator.generate(4).unwrap();
         assert_eq!(m2.size, 4);
+    }
+
+    #[test]
+    fn test_custom_generator_nan_expression_rejected() {
+        // ARC-006: pow(-1, 0.5) yields NaN. The Func::Pow gate catches this, but
+        // even if it didn't, the post-loop matrix scan must surface a clean error
+        // rather than poisoning the GPU compute shader.
+        let mut generator = CustomGenerator {
+            name: "BadPow".into(),
+            description: String::new(),
+            expression: "pow(i - 2.0, 0.5)".into(),
+            num_types: None,
+            compiled: None,
+        };
+        let err = generator.generate(4).expect_err("NaN-producing expression must error");
+        match err {
+            ExprError::Eval(msg) => assert!(
+                msg.contains("expression produced") || msg.contains("pow() of negative base"),
+                "expected ARC-006 diagnostic, got: {msg}"
+            ),
+            other => panic!("expected Eval error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_custom_generator_overflow_expression_rejected() {
+        // pow(2, 99999) overflows f32 to +Inf — must be caught after generation.
+        let mut generator = CustomGenerator {
+            name: "Overflow".into(),
+            description: String::new(),
+            expression: "pow(2.0, 99999.0)".into(),
+            num_types: None,
+            compiled: None,
+        };
+        let err = generator.generate(2).expect_err("Inf-producing expression must error");
+        match err {
+            ExprError::Eval(msg) => assert!(
+                msg.contains("expression produced"),
+                "expected ARC-006 diagnostic, got: {msg}"
+            ),
+            other => panic!("expected Eval error, got {other:?}"),
+        }
     }
 }
