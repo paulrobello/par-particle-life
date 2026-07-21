@@ -21,7 +21,7 @@ egui-wgpu = "0.34"
 egui-winit = "0.34"
 
 # Math and utilities
-glam = { version = "0.32", features = ["serde"] }
+glam = { version = "0.33", features = ["serde"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 rand = "0.10"
 rand_chacha = "0.10"
