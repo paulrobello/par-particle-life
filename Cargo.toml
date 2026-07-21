@@ -16,7 +16,7 @@ wgpu = "29"
 winit = "0.30"
 
 # GUI
-egui = "0.34"
+egui = "0.35"
 egui-wgpu = "0.34"
 egui-winit = "0.34"
 
